@@ -54,31 +54,61 @@ async function checkOutput(out: string, force: boolean): Promise<string[]> {
   return owned;
 }
 
+export interface SwapFs {
+  rename: typeof rename;
+  rm: typeof rm;
+}
+
 /**
  * Moves a fully generated staging folder into `out`. The previous sequence is first moved
  * aside (same filesystem, so renames are atomic) and restored if any step fails.
  * Only scrollframe-owned entries are touched; unrelated files in `out` are never removed.
+ * The backup is deleted only once the swap or the full restore has succeeded; if the
+ * restore itself fails (e.g. EBUSY/EPERM on Windows), it is kept and its path reported.
  */
-async function swapIntoPlace(out: string, staging: string, previous: string[]): Promise<void> {
+export async function swapIntoPlace(
+  out: string,
+  staging: string,
+  previous: string[],
+  fs: SwapFs = { rename, rm },
+): Promise<void> {
   const backup = await mkdtemp(join(out, ".scrollframe-old-"));
   const movedAside: string[] = [];
   const movedIn: string[] = [];
   try {
     for (const entry of previous) {
-      await rename(join(out, entry), join(backup, entry));
+      await fs.rename(join(out, entry), join(backup, entry));
       movedAside.push(entry);
     }
-    for (const entry of await readdir(staging)) {
-      await rename(join(staging, entry), join(out, entry));
+    for (const entry of (await readdir(staging)).sort()) {
+      await fs.rename(join(staging, entry), join(out, entry));
       movedIn.push(entry);
     }
   } catch (error) {
-    for (const entry of movedIn) await rm(join(out, entry), { recursive: true, force: true });
-    for (const entry of movedAside) await rename(join(backup, entry), join(out, entry));
-    throw error;
-  } finally {
+    let restored = true;
+    for (const entry of movedIn) {
+      try {
+        await fs.rm(join(out, entry), { recursive: true, force: true });
+      } catch {
+        restored = false;
+      }
+    }
+    for (const entry of movedAside) {
+      try {
+        await fs.rename(join(backup, entry), join(out, entry));
+      } catch {
+        restored = false;
+      }
+    }
+    if (!restored) {
+      throw new Error(
+        `Could not replace the sequence (${(error as Error).message}). The previous sequence is kept in ${backup}.`,
+      );
+    }
     await rm(backup, { recursive: true, force: true });
+    throw error;
   }
+  await rm(backup, { recursive: true, force: true });
 }
 
 export async function generateSequence(options: GenerateOptions, log: Log = () => {}): Promise<GenerateResult> {
