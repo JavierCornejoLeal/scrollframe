@@ -60,9 +60,10 @@ jobs:
       - name: are the types wrong
         working-directory: ${{ runner.temp }}/tarballs
         run: |
-          npx -y @arethetypeswrong/cli@0.18.5 scrollframe-core-0.0.0.tgz
-          npx -y @arethetypeswrong/cli@0.18.5 scrollframe-react-0.0.0.tgz
-          npx -y @arethetypeswrong/cli@0.18.5 --profile esm-only scrollframe-0.0.0.tgz
+          # Globs, not versions: the version PR renames every tarball.
+          npx -y @arethetypeswrong/cli@0.18.5 scrollframe-core-*.tgz
+          npx -y @arethetypeswrong/cli@0.18.5 scrollframe-react-*.tgz
+          npx -y @arethetypeswrong/cli@0.18.5 --profile esm-only scrollframe-[0-9]*.tgz
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: tarballs
