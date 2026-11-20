@@ -3,7 +3,7 @@ import { chmodSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, w
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
-import { HELP, availableFrames, parseFrameRate, resolveFfmpeg, runCli } from "../src/index.js";
+import { HELP, availableFrames, ffmpegNotFoundMessage, parseFrameRate, resolveFfmpeg, runCli } from "../src/index.js";
 
 function io() {
   const out = { stdout: "", stderr: "" };
@@ -74,6 +74,27 @@ describe("runCli", () => {
     const { out, io: cli } = io();
     expect(await runCli([video, "--ffmpeg", join(scratch, "nope")], cli)).toBe(2);
     expect(out.stderr).toBe(`ffmpeg not found ("${join(scratch, "nope")}"). Install ffmpeg or pass --ffmpeg <path>.\n`);
+  });
+});
+
+describe("ffmpegNotFoundMessage", () => {
+  it("keeps the short message when the bundled binary is not the problem", () => {
+    expect(ffmpegNotFoundMessage("/opt/ffmpeg", false)).toBe(
+      'ffmpeg not found ("/opt/ffmpeg"). Install ffmpeg or pass --ffmpeg <path>.',
+    );
+  });
+
+  it("explains the blocked install script and gives the exact fixes", () => {
+    expect(ffmpegNotFoundMessage("ffmpeg", true)).toBe(
+      [
+        "ffmpeg not found. The ffmpeg bundled with scrollframe (ffmpeg-static) was not downloaded, usually because",
+        "its install script was blocked (npm 12+ blocks dependency install scripts by default). Fix it with one of:",
+        "",
+        "  npx --allow-scripts=ffmpeg-static scrollframe <video>",
+        "  npm install-scripts approve ffmpeg-static && npm rebuild ffmpeg-static   (installed in a project)",
+        "  install ffmpeg on your system, or pass --ffmpeg <path>",
+      ].join("\n"),
+    );
   });
 });
 
