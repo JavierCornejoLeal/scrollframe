@@ -44,6 +44,7 @@ export class ScrollSequence {
   private ready = false;
   private destroyed = false;
   private preloading = false;
+  private started = false;
 
   constructor(options: ScrollSequenceOptions) {
     this.options = { concurrency: 6, preloadMargin: "100% 0px", ...options };
@@ -52,9 +53,10 @@ export class ScrollSequence {
     this.applyCanvasSize();
   }
 
-  /** Starts observing. Returns `this` for chaining. No-op under reduced motion / Save-Data. */
+  /** Starts observing. Returns `this` for chaining. Idempotent; no-op under reduced motion / Save-Data. */
   start(): this {
-    if (this.destroyed || prefersStaticMedia()) return this;
+    if (this.started || this.destroyed || prefersStaticMedia()) return this;
+    this.started = true;
     this.observer = new IntersectionObserver(
       (entries) => {
         if (entries.some((entry) => entry.isIntersecting)) this.preload();
