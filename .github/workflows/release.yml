@@ -21,10 +21,16 @@ jobs:
           cache: pnpm
           registry-url: https://registry.npmjs.org
       - run: pnpm install --frozen-lockfile
+      # With pending changesets this opens a "Version Packages" PR; it only publishes
+      # once that PR is merged and no changesets are left.
       - uses: changesets/action@v1
         with:
+          title: "chore: version packages"
+          commit: "chore: version packages"
           publish: pnpm release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          # Signed provenance links each npm tarball to this repository and workflow run.
+          NPM_CONFIG_PROVENANCE: "true"
