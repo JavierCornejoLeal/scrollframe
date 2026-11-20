@@ -13,10 +13,10 @@ Branch: `feat/initial-packages` · Delivery: `ask-on-risk` · Test runner: vites
 
 ## Tasks
 
-- [x] T1 (S1) Monorepo tooling: workspace, tsconfig, tsup, vitest, changesets, CI — inline — 8bbb3a3
-- [x] T2 (S3) `@scrollframe/core` with tests — inline — c8bccb5
-- [x] T3 (S4, S5) `@scrollframe/react` — inline — 6332631
-- [x] T4 (S2) `scrollframe` CLI with tests — inline — 3db44fa
+- [x] T1 (S1) Monorepo tooling: workspace, tsconfig, tsup, vitest, changesets, CI — inline — 66c99cf
+- [x] T2 (S3) `@scrollframe/core` with tests — inline — 46e4624
+- [x] T3 (S4, S5) `@scrollframe/react` — inline — 1f840b9
+- [x] T4 (S2) `scrollframe` CLI with tests — inline — 604e4fb
 
 ## Log
 
@@ -25,3 +25,5 @@ Branch: `feat/initial-packages` · Delivery: `ask-on-risk` · Test runner: vites
 - L3: Evidence: `pnpm test` 38/38 (incl. end-to-end with real ffmpeg-static), `pnpm typecheck` ok, `pnpm build` ok; built CLI smoke run on a 4s 1080p clip: mobile 0.7 MB, tablet 1.3 MB, desktop 2.1 MB for 120 frames; missing argument exits 2.
 - L4: Decision: frames held as `HTMLImageElement`, not `ImageBitmap` (120 full-HD bitmaps would pin >1 GB RAM).
 - L5: Next: Next.js example app, real Lighthouse run, `repository` field + absolute README links once the GitHub repo exists, create npm org `scrollframe`. Engram mirror: pending.
+- L6 (2026-11-20): "Si, dale crealo crea los commits, a poder separar por tareas todos los commits asi me entero un poco, si hace falta crea PRs o como veas"
+- L7: History rebuilt before the first push so every commit installs with `--frozen-lockfile` and passes typecheck/test/build on its own (needed for stacked PRs). Chain strategy: stacked PRs to main, one PR per task.

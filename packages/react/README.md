@@ -1,3 +1,3 @@
 # @scrollframe/react
 
-See the [scrollframe README](../../README.md).
+See the [scrollframe documentation](https://github.com/JavierCornejoLeal/scrollframe#readme).
