@@ -7,3 +7,8 @@ updates:
       interval: weekly
     commit-message:
       prefix: ci
+    ignore:
+      # changesets/action v2 requires Changesets v3 (this repo uses v2); v1 is still
+      # maintained. Migrate both together, after the first release.
+      - dependency-name: changesets/action
+        update-types: ["version-update:semver-major"]

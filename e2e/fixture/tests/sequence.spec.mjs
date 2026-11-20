@@ -147,17 +147,21 @@ test.describe("Core Web Vitals (Chromium APIs)", () => {
       await route.fulfill({ response, body: html });
     });
     await page.goto("/");
-    const lcp = await page.evaluate(
-      () =>
-        new Promise((resolve) => {
-          new PerformanceObserver((list) => {
-            const entries = list.getEntries();
-            const last = entries[entries.length - 1];
-            resolve({ tag: last.element?.tagName, url: last.url });
-          }).observe({ type: "largest-contentful-paint", buffered: true });
-        }),
-    );
-    expect(lcp.tag).toBe("IMG");
+    // The heading paints first; the poster only becomes the LCP once it has loaded, so the
+    // latest candidate is polled instead of reading the first observer callback.
+    const latestLcp = () =>
+      page.evaluate(
+        () =>
+          new Promise((resolve) => {
+            new PerformanceObserver((list) => {
+              const entries = list.getEntries();
+              const last = entries[entries.length - 1];
+              resolve({ tag: last.element?.tagName, url: last.url });
+            }).observe({ type: "largest-contentful-paint", buffered: true });
+          }),
+      );
+    await expect.poll(async () => (await latestLcp()).tag).toBe("IMG");
+    const lcp = await latestLcp();
     expect(lcp.url).toMatch(/\/sequence\/desktop\/poster\.webp$/);
   });
 
