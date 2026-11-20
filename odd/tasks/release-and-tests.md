@@ -20,6 +20,8 @@ Branch: `fix/release-and-tests` · Delivery: `ask-on-risk` · Test runner: vites
 - [x] T7 (S3) CLI `--force` stages output and swaps atomically; round frame cap (Codex M4, m1) — inline
 - [x] T8 (S1, S3) Release: approval-gated environment, SHA-pinned actions, Dependabot (Codex M1, M2) — inline
 
+- [x] T9 (S3) Codex recheck fixes: API-verified release merge gate (M1), backup-preserving rollback (new Major) — inline
+
 ## Log
 
 - L1 (2026-11-20): "porfavor, consigamos revisar los fallos que ha estado dando, haz mas test, revisa lo que haces con codex antes de lanzarlo"
@@ -27,3 +29,5 @@ Branch: `fix/release-and-tests` · Delivery: `ask-on-risk` · Test runner: vites
 - L3: Codex review verdicts: M1 release publishes any version bump on main (confirmed, comment was misleading); M2 mutable action tags with publish credentials (confirmed); M3 engine never retries failed frames (confirmed); M4 `--force` deletes old sequence before success (confirmed); m1 `floor(4.00*29.97)=119` undercounts (confirmed, introduced in this branch); m2 canvas lacks object-fit (false positive: canvas spreads `fill` with `objectFit: "cover"`).
 - L4: Fixes: T6 bounded retry (1s/2s/4s) + `online` retry, only missing frames re-requested; T7 output generated in `.scrollframe-new-*` staging inside `--out` and swapped in with rollback, frame cap rounded; T8 release split into `version` (never publishes) and `publish` (only on the version-PR merge commit, `environment: npm`), all actions SHA-pinned, Dependabot for actions. 72 tests green.
 - L5: Open, owner decisions: enable "Allow GitHub Actions to create and approve pull requests" (needed by the `version` job); add required reviewers to the `npm` environment; create the npm org and `NPM_TOKEN`.
+- L6: Codex recheck: M2, M3, M4, m1 RESOLVED; M1 NOT RESOLVED (commit-message gate is forgeable); new Major: rollback failure deleted the backup. Both fixed: publish now requires the GitHub API to report a merged PR from this repo's `changeset-release/main` (query validated against real commits: 0 for other PRs and direct commits, 1 for a match); rollback is best-effort and keeps + reports the backup when restore fails. 75 tests green.
+- L7 (2026-11-20): "arregla lo que encuentre codex y abre la PR"
