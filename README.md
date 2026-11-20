@@ -1,0 +1,99 @@
+# scrollframe
+
+Turn a video into a scroll-driven storytelling section with one command, without sacrificing Core Web Vitals, accessibility or SEO.
+
+```bash
+npx scrollframe hero.mp4
+```
+
+```tsx
+import { ScrollSequence } from "@scrollframe/react";
+import manifest from "../public/sequence/manifest.json";
+
+export default function Home() {
+  return (
+    <ScrollSequence manifest={manifest} alt="Barista pouring latte art in our Madrid coffee shop">
+      <h1>Specialty coffee, roasted in Madrid</h1>
+    </ScrollSequence>
+  );
+}
+```
+
+## Packages
+
+| Package | Description |
+| --- | --- |
+| [`scrollframe`](packages/cli) | CLI: video → optimized WebP frames for mobile, tablet and desktop + `manifest.json` |
+| [`@scrollframe/core`](packages/core) | Framework-agnostic canvas engine |
+| [`@scrollframe/react`](packages/react) | `<ScrollSequence>` component for React and Next.js |
+
+## How it stays fast
+
+- **The poster is the LCP.** The first frame is server-rendered as a real `<img>` with fixed `width`/`height` (no CLS) and `fetchpriority="high"`.
+- **Frames load late.** Nothing is fetched until the section is about one viewport away, and only the set that matches the viewport (mobile, tablet or desktop).
+- **Coarse-to-fine loading.** Every 16th frame is loaded first, then the gaps are filled in, so scrubbing works before everything is downloaded.
+- **No layout work while scrolling.** Frames are painted on a `<canvas>` inside `requestAnimationFrame`; scroll listeners are passive.
+- **Respects the user.** With `prefers-reduced-motion` or Save-Data, only the poster is shown.
+
+## SEO and accessibility
+
+Frames are decorative: the canvas is `aria-hidden` and frames have no alt text. Putting alt text or metadata on hundreds of frames would read as keyword stuffing to search engines and as noise to screen readers. Search engines index instead:
+
+- the poster, with the `alt` you provide,
+- the overlay `children`, which are real, semantic HTML.
+
+## Overlays
+
+Anything you pass as `children` is rendered on top of the sequence. The current progress (0 to 1) is exposed as the CSS variable `--sf-progress` on the section, so overlays can animate without React re-renders:
+
+```css
+.headline {
+  opacity: clamp(0, calc(1 - var(--sf-progress) * 4), 1);
+}
+```
+
+Use `onProgress={(progress, frame) => ...}` when you need it in JavaScript.
+
+## CLI options
+
+```
+scrollframe <video> [options]
+
+  -o, --out <dir>         Output folder (default: public/sequence)
+  -b, --base-url <url>    Public URL of the output folder (default: derived from --out)
+  -f, --frames <n>        Number of frames to extract, 2-600 (default: 120)
+  -q, --quality <0-100>   WebP quality (default: 80)
+  -w, --widths <m,t,d>    Mobile, tablet and desktop widths (default: 720,1280,1920)
+      --lossless          Lossless WebP (much heavier, hurts LCP; not recommended)
+      --ffmpeg <path>     ffmpeg binary (default: FFMPEG_PATH, bundled ffmpeg-static, then PATH)
+      --force             Overwrite an existing sequence in the output folder
+```
+
+Breakpoints: mobile ≤ 767px, tablet ≤ 1279px, desktop above. Frames are never upscaled beyond the source video.
+
+## Component props
+
+| Prop | Default | Description |
+| --- | --- | --- |
+| `manifest` | required | Contents of the generated `manifest.json` |
+| `alt` | required | Poster alt text: describe the scene |
+| `scrollLength` | `"300vh"` | Scroll distance; longer is slower |
+| `priority` | `true` | Eager, high-priority poster. Set `false` below the fold |
+| `baseUrl` | manifest | Serve frames from a CDN |
+| `onProgress` | — | `(progress, frameIndex) => void` |
+| `className`, `style`, `overlayClassName` | — | Styling hooks |
+
+## Development
+
+```bash
+pnpm install
+pnpm test        # vitest, including an end-to-end run with real ffmpeg
+pnpm typecheck
+pnpm build
+```
+
+Releases use [Changesets](https://github.com/changesets/changesets): run `pnpm changeset`, merge to `main`, and the release workflow publishes to npm (requires the `NPM_TOKEN` secret).
+
+## License
+
+MIT
