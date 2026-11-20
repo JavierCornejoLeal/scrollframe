@@ -26,17 +26,46 @@ function run(bin: string, args: string[]): Promise<{ code: number; stderr: strin
   });
 }
 
+/**
+ * Where ffmpeg-static says its binary is, or null when the package is missing or the platform
+ * is unsupported. The path is returned even if its install script never downloaded the binary.
+ */
+function bundledFfmpegPath(): string | null {
+  try {
+    return (createRequire(import.meta.url)("ffmpeg-static") as string | null) ?? null;
+  } catch {
+    return null;
+  }
+}
+
 /** --ffmpeg flag, then FFMPEG_PATH, then the bundled ffmpeg-static binary, then `ffmpeg` on PATH. */
 export function resolveFfmpeg(explicit?: string): string {
   if (explicit) return explicit;
   if (process.env.FFMPEG_PATH) return process.env.FFMPEG_PATH;
-  try {
-    const bundled = createRequire(import.meta.url)("ffmpeg-static") as string | null;
-    if (bundled && existsSync(bundled)) return bundled;
-  } catch {
-    // ffmpeg-static missing or its binary was not downloaded (e.g. blocked install scripts).
-  }
+  const bundled = bundledFfmpegPath();
+  if (bundled && existsSync(bundled)) return bundled;
   return "ffmpeg";
+}
+
+/**
+ * True when ffmpeg-static is installed without its binary: its install script did not run,
+ * which npm 12+ does by default for every dependency not listed in `allowScripts`.
+ */
+function bundledBinaryMissing(): boolean {
+  const bundled = bundledFfmpegPath();
+  return bundled !== null && !existsSync(bundled);
+}
+
+export function ffmpegNotFoundMessage(ffmpeg: string, bundledBinaryBlocked: boolean): string {
+  if (!bundledBinaryBlocked) return `ffmpeg not found ("${ffmpeg}"). Install ffmpeg or pass --ffmpeg <path>.`;
+  return [
+    "ffmpeg not found. The ffmpeg bundled with scrollframe (ffmpeg-static) was not downloaded, usually because",
+    "its install script was blocked (npm 12+ blocks dependency install scripts by default). Fix it with one of:",
+    "",
+    "  npx --allow-scripts=ffmpeg-static scrollframe <video>",
+    "  npm install-scripts approve ffmpeg-static && npm rebuild ffmpeg-static   (installed in a project)",
+    "  install ffmpeg on your system, or pass --ffmpeg <path>",
+  ].join("\n");
 }
 
 const OWNED_ENTRIES = ["manifest.json", "mobile", "tablet", "desktop"];
@@ -119,7 +148,9 @@ export async function generateSequence(options: GenerateOptions, log: Log = () =
   try {
     probe = await run(ffmpeg, ["-hide_banner", "-i", options.input]);
   } catch {
-    throw new UsageError(`ffmpeg not found ("${ffmpeg}"). Install ffmpeg or pass --ffmpeg <path>.`);
+    // Only the automatic fallback can be explained by a blocked ffmpeg-static install.
+    const fellBack = !options.ffmpeg && !process.env.FFMPEG_PATH;
+    throw new UsageError(ffmpegNotFoundMessage(ffmpeg, fellBack && bundledBinaryMissing()));
   }
   const duration = parseDuration(probe.stderr);
   if (duration === null) throw new UsageError(`Could not read the video duration of ${options.input}.`);

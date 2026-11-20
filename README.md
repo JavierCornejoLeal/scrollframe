@@ -72,6 +72,20 @@ scrollframe <video> [options]
 
 Breakpoints: mobile ≤ 767px, tablet ≤ 1279px, desktop above. Frames are never upscaled beyond the source video.
 
+### ffmpeg
+
+scrollframe bundles ffmpeg through [`ffmpeg-static`](https://github.com/eugeneware/ffmpeg-static), which downloads the binary in its install script. npm 12 and later block dependency install scripts by default, so the binary is missing and the CLI stops with the fix. Allow that one script:
+
+```bash
+# One-off run
+npx --allow-scripts=ffmpeg-static scrollframe hero.mp4
+
+# Installed in a project
+npm install-scripts approve ffmpeg-static && npm rebuild ffmpeg-static
+```
+
+Or install ffmpeg on your system, or pass `--ffmpeg <path>` / set `FFMPEG_PATH`.
+
 ## Component props
 
 | Prop | Default | Description |
@@ -105,6 +119,7 @@ Every pull request and push to `main` runs:
 | `unit` | Unit tests, typecheck and build on Node 22/24 (Linux) and Node 22 (macOS, Windows) |
 | `package` | The packed tarballs pass `publint` and `arethetypeswrong` |
 | `cli e2e` | The tarballs install with plain npm on Linux (Node 20/22/24), macOS and Windows, and the CLI turns a synthetic ffmpeg video into a valid sequence |
+| `cli e2e (npm 12, …)` | With install scripts blocked and no ffmpeg on PATH, the CLI explains the missing binary, and both documented fixes work |
 | `browser e2e` | A React app built from the tarballs scrubs the right frame for each scroll position in Chromium, Firefox and WebKit, loads only the set for the viewport, loads late, retries failed frames, respects reduced motion and causes no layout shift |
 | `CI passed` | Green only when all of the above are; it is the required check on `main` |
 
