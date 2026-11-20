@@ -46,11 +46,19 @@ jobs:
                              and .head.repo.full_name == "${{ github.repository }}")] | length')
           if [ "$count" -gt 0 ]; then echo "merged=true" >> "$GITHUB_OUTPUT"; else echo "merged=false" >> "$GITHUB_OUTPUT"; fi
 
-  # Publishes only when the pushed commit is the merged version PR, and only after
+  # A local reusable workflow runs from the same commit as this release workflow.
+  verify-release:
+    needs: version
+    if: needs.version.outputs.hasChangesets == 'false' && needs.version.outputs.isReleaseMerge == 'true'
+    permissions:
+      contents: read
+    uses: ./.github/workflows/ci.yml
+
+  # Publishes only when CI passes for the merged version PR commit, and only after
   # approval on the protected `npm` environment. Any other push to main, including a
   # direct commit or a manual version bump, never reaches npm.
   publish:
-    needs: version
+    needs: [version, verify-release]
     if: needs.version.outputs.hasChangesets == 'false' && needs.version.outputs.isReleaseMerge == 'true'
     runs-on: ubuntu-latest
     environment: npm
