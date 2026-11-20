@@ -1,6 +1,6 @@
 {
   "name": "@scrollframe/react",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "React / Next.js scroll storytelling component powered by @scrollframe/core.",
   "license": "MIT",
   "repository": {
