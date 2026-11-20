@@ -9,6 +9,7 @@
   "scripts": {
     "build": "pnpm -r --if-present build",
     "test": "vitest run --passWithNoTests",
+    "e2e": "pnpm build && node e2e/scripts/prepare.mjs --run",
     "typecheck": "pnpm build && pnpm -r --if-present typecheck",
     "changeset": "changeset",
     "release": "pnpm build && changeset publish"
