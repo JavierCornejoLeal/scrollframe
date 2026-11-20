@@ -102,9 +102,9 @@ Every pull request and push to `main` runs:
 
 | Job | What it proves |
 | --- | --- |
-| `unit` | Unit tests, typecheck and build on Node 20/22/24 (Linux) and Node 22 (macOS, Windows) |
+| `unit` | Unit tests, typecheck and build on Node 22/24 (Linux) and Node 22 (macOS, Windows) |
 | `package` | The packed tarballs pass `publint` and `arethetypeswrong` |
-| `cli e2e` | The tarballs install with plain npm on Linux, macOS and Windows, and the CLI turns a synthetic ffmpeg video into a valid sequence |
+| `cli e2e` | The tarballs install with plain npm on Linux (Node 20/22/24), macOS and Windows, and the CLI turns a synthetic ffmpeg video into a valid sequence |
 | `browser e2e` | A React app built from the tarballs scrubs the right frame for each scroll position in Chromium, Firefox and WebKit, loads only the set for the viewport, loads late, retries failed frames, respects reduced motion and causes no layout shift |
 | `CI passed` | Green only when all of the above are; it is the required check on `main` |
 

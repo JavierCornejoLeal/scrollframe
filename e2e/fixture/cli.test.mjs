@@ -9,6 +9,10 @@ import { after, before, describe, test } from "node:test";
 import { parseManifest } from "@scrollframe/core";
 import sharp from "sharp";
 
+// libvips keeps recently read files open; on Windows an open file blocks renaming its
+// folder, which would make this test process break the CLI's own `--force` swap.
+sharp.cache(false);
+
 const VIDEO = join(import.meta.dirname, "input.mp4");
 const SOURCE_FRAMES = 60; // 2 s at 30 fps, see prepare.mjs
 

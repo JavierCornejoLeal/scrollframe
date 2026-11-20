@@ -17,6 +17,9 @@ function io() {
 }
 
 const scratch = mkdtempSync(join(tmpdir(), "scrollframe-run-"));
+// The fake ffmpeg binaries below are POSIX shell scripts, which Windows cannot execute.
+// On Windows the CLI runs against the real ffmpeg in e2e/fixture/cli.test.mjs.
+const posixIt = it.skipIf(process.platform === "win32");
 afterAll(() => rmSync(scratch, { recursive: true, force: true }));
 
 describe("runCli", () => {
@@ -40,7 +43,7 @@ describe("runCli", () => {
     expect(out.stderr).toBe("Video not found: missing.mp4\n");
   });
 
-  it("exits 2 when the output path is a file, not a folder", async () => {
+  posixIt("exits 2 when the output path is a file, not a folder", async () => {
     const video = join(scratch, "fake.mp4");
     const file = join(scratch, "not-a-dir");
     writeFileSync(video, "");
@@ -53,7 +56,7 @@ describe("runCli", () => {
     expect(out.stderr).toBe(`Output path is not a folder: ${file}\n`);
   });
 
-  it("exits 1 with 'Unexpected error' when ffmpeg fails while extracting", async () => {
+  posixIt("exits 1 with 'Unexpected error' when ffmpeg fails while extracting", async () => {
     const video = join(scratch, "fake.mp4");
     writeFileSync(video, "");
     // Reports a duration on probe, then fails like a corrupt input would.
@@ -75,7 +78,7 @@ describe("runCli", () => {
 });
 
 describe("--force safety", () => {
-  it("keeps the previous sequence untouched when the new one fails", async () => {
+  posixIt("keeps the previous sequence untouched when the new one fails", async () => {
     const video = join(scratch, "fake.mp4");
     writeFileSync(video, "");
     const ffmpeg = join(scratch, "fake-ffmpeg-fails");
