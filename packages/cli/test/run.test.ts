@@ -1,9 +1,9 @@
 import { spawnSync } from "node:child_process";
-import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
-import { HELP, parseFrameRate, resolveFfmpeg, runCli } from "../src/index.js";
+import { HELP, availableFrames, parseFrameRate, resolveFfmpeg, runCli } from "../src/index.js";
 
 function io() {
   const out = { stdout: "", stderr: "" };
@@ -74,6 +74,35 @@ describe("runCli", () => {
   });
 });
 
+describe("--force safety", () => {
+  it("keeps the previous sequence untouched when the new one fails", async () => {
+    const video = join(scratch, "fake.mp4");
+    writeFileSync(video, "");
+    const ffmpeg = join(scratch, "fake-ffmpeg-fails");
+    writeFileSync(ffmpeg, '#!/bin/sh\necho "  Duration: 00:00:02.00, start: 0" >&2\nexit 1\n');
+    chmodSync(ffmpeg, 0o755);
+    const outDir = join(scratch, "previous");
+    mkdirSync(join(outDir, "mobile"), { recursive: true });
+    writeFileSync(join(outDir, "manifest.json"), "previous");
+    writeFileSync(join(outDir, "mobile", "frame-0000.webp"), "previous");
+
+    const { io: cli } = io();
+    expect(await runCli([video, "-o", outDir, "--force", "--ffmpeg", ffmpeg], cli)).toBe(1);
+    expect(readFileSync(join(outDir, "manifest.json"), "utf8")).toBe("previous");
+    expect(readFileSync(join(outDir, "mobile", "frame-0000.webp"), "utf8")).toBe("previous");
+    expect(readdirSync(outDir).sort()).toEqual(["manifest.json", "mobile"]);
+  });
+});
+
+describe("availableFrames", () => {
+  it("rounds rate metadata instead of truncating it", () => {
+    expect(availableFrames(4, 29.97)).toBe(120);
+    expect(availableFrames(1, 10)).toBe(10);
+    expect(availableFrames(2.5, 23.976)).toBe(60);
+    expect(availableFrames(3, null)).toBe(Infinity);
+  });
+});
+
 describe("parseFrameRate", () => {
   it("reads the video stream frame rate", () => {
     expect(parseFrameRate("Stream #0:0: Video: h264, yuv420p, 1280x720, 30 fps, 30 tbr")).toBe(30);
@@ -97,6 +126,11 @@ describe.skipIf(!hasFfmpeg)("runCli (end to end)", () => {
     expect(out.stdout).toMatch(/mobile\s+640x360/);
     expect(out.stdout).toContain(`Done: 6 frames -> ${join(outDir, "manifest.json")}`);
     expect(out.stdout).toContain("<ScrollSequence manifest={manifest}");
+
+    // A forced regeneration replaces the sequence and leaves no staging folders behind.
+    expect(await runCli([video, "-o", outDir, "-f", "4", "--force"], io().io)).toBe(0);
+    expect(readdirSync(outDir).sort()).toEqual(["desktop", "manifest.json", "mobile", "tablet"]);
+    expect(readdirSync(join(outDir, "mobile"))).toHaveLength(5);
   }, 60_000);
 
   it("never asks for more frames than the video has, and says so", async () => {

@@ -3,6 +3,7 @@ export { generateSequence, resolveFfmpeg, type GenerateResult } from "./generate
 export {
   HELP,
   UsageError,
+  availableFrames,
   buildManifest,
   deriveBaseUrl,
   parseCliArgs,

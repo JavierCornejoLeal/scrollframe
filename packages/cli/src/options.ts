@@ -112,6 +112,14 @@ export function parseFrameRate(ffmpegOutput: string): number | null {
   return match ? Number(match[1]) : null;
 }
 
+/**
+ * Frames the source can provide. ffmpeg prints rounded rates (29.97 for 30000/1001), so the
+ * product is rounded rather than truncated: 4 s at "29.97 fps" is 120 frames, not 119.
+ */
+export function availableFrames(duration: number, rate: number | null): number {
+  return rate === null ? Infinity : Math.round(duration * rate);
+}
+
 /** Frame rate that yields `frames` evenly spaced frames over `duration` seconds. */
 export function samplingFps(frames: number, duration: number): number {
   if (duration <= 0) throw new UsageError("The video has no measurable duration.");
