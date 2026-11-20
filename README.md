@@ -91,9 +91,26 @@ pnpm install
 pnpm test        # vitest, including an end-to-end run with real ffmpeg
 pnpm typecheck
 pnpm build
+pnpm e2e         # packs the tarballs, installs them in a throwaway app and runs the CLI + Playwright (Chromium) suites
 ```
 
-Releases use [Changesets](https://github.com/changesets/changesets): run `pnpm changeset`, merge to `main`, and the release workflow publishes to npm (requires the `NPM_TOKEN` secret).
+`pnpm e2e` builds the consumer project in your temp folder (`--work <dir>` to change it) and prints where the Playwright report and the recorded scroll video are.
+
+### CI
+
+Every pull request and push to `main` runs:
+
+| Job | What it proves |
+| --- | --- |
+| `unit` | Unit tests, typecheck and build on Node 22/24 (Linux) and Node 22 (macOS, Windows) |
+| `package` | The packed tarballs pass `publint` and `arethetypeswrong` |
+| `cli e2e` | The tarballs install with plain npm on Linux (Node 20/22/24), macOS and Windows, and the CLI turns a synthetic ffmpeg video into a valid sequence |
+| `browser e2e` | A React app built from the tarballs scrubs the right frame for each scroll position in Chromium, Firefox and WebKit, loads only the set for the viewport, loads late, retries failed frames, respects reduced motion and causes no layout shift |
+| `CI passed` | Green only when all of the above are; it is the required check on `main` |
+
+The `scroll-demo-video` artifact of each run is a recording of the scroll through the test sequence.
+
+Releases use [Changesets](https://github.com/changesets/changesets): run `pnpm changeset` and merge to `main`. The release workflow opens a "chore: version packages" PR; merging it starts the publish job, which waits for the owner's approval on the protected `npm` environment before publishing to npm (requires the `NPM_TOKEN` secret).
 
 ## License
 

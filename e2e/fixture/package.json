@@ -1,0 +1,22 @@
+{
+  "name": "scrollframe-e2e-fixture",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "sequence": "scrollframe input.mp4 --out public/sequence --frames 60 --widths 320,640,960 --force",
+    "build": "vite build",
+    "preview": "vite preview --port 4173 --strictPort",
+    "test:cli": "node --test cli.test.mjs",
+    "test:browser": "playwright test"
+  },
+  "allowScripts": {
+    "ffmpeg-static": true
+  },
+  "devDependencies": {
+    "@playwright/test": "1.65.1",
+    "@vitejs/plugin-react": "6.3.0",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "vite": "8.3.8"
+  }
+}
