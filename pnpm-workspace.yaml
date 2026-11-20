@@ -1,0 +1,8 @@
+packages:
+  - "packages/*"
+
+# ffmpeg-static downloads its binary and sharp/esbuild set up native code on install.
+allowBuilds:
+  esbuild: true
+  ffmpeg-static: true
+  sharp: true
