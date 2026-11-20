@@ -11,7 +11,12 @@ import { dirname, join, resolve } from "node:path";
 import { after, before, test } from "node:test";
 
 const tarballs = resolve(process.env.TARBALLS ?? "");
-const tgz = (name) => join(tarballs, readdirSync(tarballs).find((f) => f.startsWith(`${name}-`) && f.endsWith(".tgz")));
+/** `scrollframe` must not match `scrollframe-core-*`: the name is followed by the version. */
+const tgz = (name) => {
+  const file = readdirSync(tarballs).find((f) => f.startsWith(`${name}-`) && /^\d/.test(f.slice(name.length + 1)));
+  assert.ok(file, `no ${name} tarball in ${tarballs}`);
+  return join(tarballs, file);
+};
 
 const FIXES = [
   "npx --allow-scripts=ffmpeg-static scrollframe <video>",
