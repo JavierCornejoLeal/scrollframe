@@ -10,7 +10,7 @@ for the @scrollframe/react <ScrollSequence> component.
 Options:
   -o, --out <dir>         Output folder (default: public/sequence)
   -b, --base-url <url>    Public URL of the output folder (default: derived from --out)
-  -f, --frames <n>        Number of frames to extract, 2-600 (default: 120)
+  -f, --frames <n>        Frames to extract, 2-600, capped at the video's own (default: 120)
   -q, --quality <0-100>   WebP quality (default: 80)
   -w, --widths <m,t,d>    Mobile, tablet and desktop widths (default: 720,1280,1920)
       --lossless          Lossless WebP (much heavier, hurts LCP; not recommended)
@@ -104,6 +104,12 @@ export function parseDuration(ffmpegOutput: string): number | null {
   if (!match) return null;
   const [, h, m, s] = match;
   return Number(h) * 3600 + Number(m) * 60 + Number(s);
+}
+
+/** Parses the frame rate of the first video stream (`..., 30 fps, ...`), or null when absent. */
+export function parseFrameRate(ffmpegOutput: string): number | null {
+  const match = ffmpegOutput.match(/Video:.*?(\d+(?:\.\d+)?) fps/);
+  return match ? Number(match[1]) : null;
 }
 
 /** Frame rate that yields `frames` evenly spaced frames over `duration` seconds. */

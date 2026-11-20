@@ -1,12 +1,12 @@
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
-import { copyFile, mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, mkdtemp, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { FrameSet, SequenceManifest } from "@scrollframe/core";
 import sharp from "sharp";
-import { buildManifest, parseDuration, planSets, samplingFps, UsageError, type GenerateOptions } from "./options.js";
+import { buildManifest, parseDuration, parseFrameRate, planSets, samplingFps, UsageError, type GenerateOptions } from "./options.js";
 
 export interface GenerateResult {
   manifest: SequenceManifest;
@@ -42,6 +42,9 @@ export function resolveFfmpeg(explicit?: string): string {
 const OWNED_ENTRIES = ["manifest.json", "mobile", "tablet", "desktop"];
 
 async function prepareOutput(out: string, force: boolean): Promise<void> {
+  if (existsSync(out) && !(await stat(out)).isDirectory()) {
+    throw new UsageError(`Output path is not a folder: ${out}`);
+  }
   const entries = existsSync(out) ? await readdir(out) : [];
   const owned = entries.filter((entry) => OWNED_ENTRIES.includes(entry));
   if (owned.length > 0 && !force) {
@@ -65,20 +68,29 @@ export async function generateSequence(options: GenerateOptions, log: Log = () =
   const duration = parseDuration(probe.stderr);
   if (duration === null) throw new UsageError(`Could not read the video duration of ${options.input}.`);
 
+  // Asking for more frames than the source has only duplicates frames (more bytes, no smoother motion).
+  const rate = parseFrameRate(probe.stderr);
+  const available = rate === null ? Infinity : Math.floor(duration * rate);
+  const frames = Math.min(options.frames, available);
+  if (frames < 2) throw new UsageError("The video produced fewer than 2 frames.");
+  if (frames < options.frames) {
+    log(`The video only has ${frames} frames; extracting ${frames} instead of ${options.frames}.`);
+  }
+
   await prepareOutput(options.out, options.force);
   const tmp = await mkdtemp(join(tmpdir(), "scrollframe-"));
 
   try {
     const plan = planSets(options.widths);
     const largest = plan[plan.length - 1]!.width;
-    const fps = samplingFps(options.frames, duration);
-    log(`Extracting ${options.frames} frames from ${duration.toFixed(2)}s of video...`);
+    const fps = samplingFps(frames, duration);
+    log(`Extracting ${frames} frames from ${duration.toFixed(2)}s of video...`);
     const extract = await run(ffmpeg, [
       "-hide_banner",
       "-loglevel", "error",
       "-i", options.input,
       "-vf", `fps=${fps},scale='min(${largest},iw)':-2:flags=lanczos`,
-      "-frames:v", String(options.frames),
+      "-frames:v", String(frames),
       join(tmp, "%06d.png"),
     ]);
     if (extract.code !== 0) throw new Error(`ffmpeg failed:\n${extract.stderr}`);

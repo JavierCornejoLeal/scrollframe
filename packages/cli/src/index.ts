@@ -1,3 +1,4 @@
+export { runCli, type CliIO } from "./run.js";
 export { generateSequence, resolveFfmpeg, type GenerateResult } from "./generate.js";
 export {
   HELP,
@@ -6,6 +7,7 @@ export {
   deriveBaseUrl,
   parseCliArgs,
   parseDuration,
+  parseFrameRate,
   planSets,
   samplingFps,
   type GenerateOptions,
