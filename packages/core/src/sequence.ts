@@ -17,6 +17,9 @@ export interface ScrollSequenceOptions {
   onReady?: () => void;
 }
 
+/** Automatic retries after failed frames: 1s, 2s, 4s. A later `online` event always retries. */
+const RETRY_DELAYS_MS = [1000, 2000, 4000];
+
 /** Progress is exposed to CSS so overlays can animate without re-rendering any framework. */
 export const PROGRESS_CSS_VAR = "--sf-progress";
 
@@ -45,6 +48,10 @@ export class ScrollSequence {
   private destroyed = false;
   private preloading = false;
   private started = false;
+  /** The section has been near the viewport at least once, so frames are wanted. */
+  private near = false;
+  private retries = 0;
+  private retryTimer: ReturnType<typeof setTimeout> | undefined;
 
   constructor(options: ScrollSequenceOptions) {
     this.options = { concurrency: 6, preloadMargin: "100% 0px", ...options };
@@ -59,13 +66,17 @@ export class ScrollSequence {
     this.started = true;
     this.observer = new IntersectionObserver(
       (entries) => {
-        if (entries.some((entry) => entry.isIntersecting)) this.preload();
+        if (entries.some((entry) => entry.isIntersecting)) {
+          this.near = true;
+          this.preload();
+        }
       },
       { rootMargin: this.options.preloadMargin },
     );
     this.observer.observe(this.options.container);
     window.addEventListener("scroll", this.schedule, { passive: true });
     window.addEventListener("resize", this.handleResize, { passive: true });
+    window.addEventListener("online", this.handleOnline);
     this.schedule();
     return this;
   }
@@ -76,6 +87,8 @@ export class ScrollSequence {
     this.observer?.disconnect();
     window.removeEventListener("scroll", this.schedule);
     window.removeEventListener("resize", this.handleResize);
+    window.removeEventListener("online", this.handleOnline);
+    clearTimeout(this.retryTimer);
     cancelAnimationFrame(this.rafId);
     this.releaseFrames();
   }
@@ -105,17 +118,32 @@ export class ScrollSequence {
   private readonly handleResize = (): void => {
     const next = selectFrameSet(this.options.manifest, window.innerWidth);
     if (next.name !== this.set.name) {
-      const wasPreloading = this.preloading;
       this.generation++;
       this.releaseFrames();
       this.set = next;
       this.drawnIndex = -1;
       this.preloading = false;
+      this.retries = 0;
+      clearTimeout(this.retryTimer);
       this.applyCanvasSize();
-      if (wasPreloading) this.preload();
+      if (this.near) this.preload();
     }
     this.schedule();
   };
+
+  private readonly handleOnline = (): void => {
+    if (!this.near) return;
+    clearTimeout(this.retryTimer);
+    this.retries = 0;
+    this.preload();
+  };
+
+  private scheduleRetry(): void {
+    const delay = RETRY_DELAYS_MS[this.retries];
+    if (delay === undefined || this.destroyed) return;
+    this.retries++;
+    this.retryTimer = setTimeout(() => this.preload(), delay);
+  }
 
   private render(): void {
     const progress = this.progress;
@@ -141,8 +169,10 @@ export class ScrollSequence {
     this.preloading = true;
     const generation = this.generation;
     const { manifest, baseUrl, concurrency } = this.options;
-    const queue = coarseToFineOrder(manifest.frameCount);
-    this.frames = new Array(manifest.frameCount).fill(null);
+    if (this.frames.length !== manifest.frameCount) this.frames = new Array(manifest.frameCount).fill(null);
+    // On a retry only the frames that are still missing are requested again.
+    const queue = coarseToFineOrder(manifest.frameCount).filter((index) => this.frames[index] == null);
+    let failed = 0;
 
     const worker = async (): Promise<void> => {
       for (let index = queue.shift(); index !== undefined; index = queue.shift()) {
@@ -153,12 +183,19 @@ export class ScrollSequence {
           this.frames[index] = frame;
           this.schedule();
         } catch {
-          // A missing frame is skipped; `nearestLoaded` paints its neighbour instead.
+          // Meanwhile `nearestLoaded` paints a neighbour; the frame is retried below.
+          failed++;
         }
       }
     };
 
-    for (let i = 0; i < concurrency; i++) void worker();
+    const workers = Array.from({ length: Math.min(concurrency, queue.length) }, worker);
+    void Promise.all(workers).then(() => {
+      if (generation !== this.generation) return;
+      this.preloading = false;
+      if (failed > 0) this.scheduleRetry();
+      else this.retries = 0;
+    });
   }
 }
 

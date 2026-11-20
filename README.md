@@ -32,6 +32,7 @@ export default function Home() {
 - **The poster is the LCP.** The first frame is server-rendered as a real `<img>` with fixed `width`/`height` (no CLS) and `fetchpriority="high"`.
 - **Frames load late.** Nothing is fetched until the section is about one viewport away, and only the set that matches the viewport (mobile, tablet or desktop).
 - **Coarse-to-fine loading.** Every 16th frame is loaded first, then the gaps are filled in, so scrubbing works before everything is downloaded.
+- **Recovers from flaky networks.** Frames that fail are retried after 1s, 2s and 4s, and again when the browser comes back online; only missing frames are re-requested.
 - **No layout work while scrolling.** Frames are painted on a `<canvas>` inside `requestAnimationFrame`; scroll listeners are passive.
 - **Respects the user.** With `prefers-reduced-motion` or Save-Data, only the poster is shown.
 

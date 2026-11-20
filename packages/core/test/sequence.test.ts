@@ -49,6 +49,8 @@ class FakeObserver {
 }
 
 let rafQueue: FrameRequestCallback[] = [];
+/** Engines listen on the shared jsdom window, so every test destroys the ones it created. */
+const live: ScrollSequence[] = [];
 let drawImage: ReturnType<typeof vi.fn>;
 let rect = { top: 0, height: 3000 };
 let reducedMotion = false;
@@ -78,6 +80,7 @@ function create(extra: Partial<ScrollSequenceOptions> = {}) {
   container.getBoundingClientRect = () => ({ top: rect.top, height: rect.height }) as DOMRect;
   const canvas = document.createElement("canvas");
   const engine = new ScrollSequence({ container, canvas, manifest, ...extra });
+  live.push(engine);
   return { engine, container, canvas };
 }
 
@@ -99,6 +102,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  for (const engine of live.splice(0)) engine.destroy();
   vi.unstubAllGlobals();
 });
 
@@ -229,5 +233,86 @@ describe("ScrollSequence engine", () => {
     expect(drawImage).not.toHaveBeenCalled();
     expect(engine.start()).toBe(engine);
     expect(FakeObserver.instances).toHaveLength(1);
+  });
+});
+
+describe("ScrollSequence recovery", () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  const flush = () => vi.advanceTimersByTimeAsync(0);
+
+  async function failEverything() {
+    for (let i = 0; i < 100 && FakeImage.pending.size > 0; i++) {
+      const entries = [...FakeImage.pending.values()];
+      FakeImage.pending.clear();
+      for (const entry of entries) entry.reject(new Error("offline"));
+      await flush();
+    }
+  }
+
+  async function startOffline() {
+    const engine = create().engine.start();
+    FakeObserver.instances[0]!.intersect();
+    await flush();
+    await failEverything();
+    FakeImage.requests = [];
+    return engine;
+  }
+
+  it("retries failed frames with backoff and paints once they arrive", async () => {
+    await startOffline();
+    await vi.advanceTimersByTimeAsync(999);
+    expect(FakeImage.requests).toEqual([]);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(FakeImage.requests[0]).toBe("/seq/m/f-00.webp");
+
+    FakeImage.pending.get("/seq/m/f-00.webp")!.resolve();
+    await flush();
+    flushFrames();
+    expect((drawImage.mock.calls.at(-1)![0] as FakeImage).src).toBe("/seq/m/f-00.webp");
+  });
+
+  it("retries immediately when the browser comes back online", async () => {
+    await startOffline();
+    window.dispatchEvent(new Event("online"));
+    await flush();
+    expect(FakeImage.requests).toHaveLength(6);
+  });
+
+  it("only re-requests frames that are still missing", async () => {
+    create({ concurrency: 1 }).engine.start();
+    FakeObserver.instances[0]!.intersect();
+    await flush();
+    FakeImage.pending.get("/seq/m/f-00.webp")!.resolve();
+    await flush();
+    await failEverything();
+    FakeImage.requests = [];
+    window.dispatchEvent(new Event("online"));
+    await flush();
+    expect(FakeImage.requests).toEqual(["/seq/m/f-16.webp"]);
+  });
+
+  it("gives up after a bounded number of automatic retries", async () => {
+    await startOffline();
+    for (let attempt = 0; attempt < 3; attempt++) {
+      await vi.advanceTimersByTimeAsync(60_000);
+      await failEverything();
+    }
+    FakeImage.requests = [];
+    await vi.advanceTimersByTimeAsync(10 * 60_000);
+    expect(FakeImage.requests).toEqual([]);
+  });
+
+  it("cancels pending retries on destroy", async () => {
+    const engine = await startOffline();
+    engine.destroy();
+    window.dispatchEvent(new Event("online"));
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(FakeImage.requests).toEqual([]);
   });
 });
