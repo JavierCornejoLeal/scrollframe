@@ -1,12 +1,12 @@
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
-import { copyFile, mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, mkdtemp, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { FrameSet, SequenceManifest } from "@scrollframe/core";
 import sharp from "sharp";
-import { buildManifest, parseDuration, planSets, samplingFps, UsageError, type GenerateOptions } from "./options.js";
+import { availableFrames, buildManifest, parseDuration, parseFrameRate, planSets, samplingFps, UsageError, type GenerateOptions } from "./options.js";
 
 export interface GenerateResult {
   manifest: SequenceManifest;
@@ -41,15 +41,74 @@ export function resolveFfmpeg(explicit?: string): string {
 
 const OWNED_ENTRIES = ["manifest.json", "mobile", "tablet", "desktop"];
 
-async function prepareOutput(out: string, force: boolean): Promise<void> {
+/** Validates the output folder and returns the scrollframe-owned entries it already contains. */
+async function checkOutput(out: string, force: boolean): Promise<string[]> {
+  if (existsSync(out) && !(await stat(out)).isDirectory()) {
+    throw new UsageError(`Output path is not a folder: ${out}`);
+  }
   const entries = existsSync(out) ? await readdir(out) : [];
   const owned = entries.filter((entry) => OWNED_ENTRIES.includes(entry));
   if (owned.length > 0 && !force) {
     throw new UsageError(`${out} already contains a sequence. Use --force to overwrite it.`);
   }
-  // Only remove what scrollframe itself generates; never wipe unrelated files.
-  await Promise.all(owned.map((entry) => rm(join(out, entry), { recursive: true, force: true })));
-  await mkdir(out, { recursive: true });
+  return owned;
+}
+
+export interface SwapFs {
+  rename: typeof rename;
+  rm: typeof rm;
+}
+
+/**
+ * Moves a fully generated staging folder into `out`. The previous sequence is first moved
+ * aside (same filesystem, so renames are atomic) and restored if any step fails.
+ * Only scrollframe-owned entries are touched; unrelated files in `out` are never removed.
+ * The backup is deleted only once the swap or the full restore has succeeded; if the
+ * restore itself fails (e.g. EBUSY/EPERM on Windows), it is kept and its path reported.
+ */
+export async function swapIntoPlace(
+  out: string,
+  staging: string,
+  previous: string[],
+  fs: SwapFs = { rename, rm },
+): Promise<void> {
+  const backup = await mkdtemp(join(out, ".scrollframe-old-"));
+  const movedAside: string[] = [];
+  const movedIn: string[] = [];
+  try {
+    for (const entry of previous) {
+      await fs.rename(join(out, entry), join(backup, entry));
+      movedAside.push(entry);
+    }
+    for (const entry of (await readdir(staging)).sort()) {
+      await fs.rename(join(staging, entry), join(out, entry));
+      movedIn.push(entry);
+    }
+  } catch (error) {
+    let restored = true;
+    for (const entry of movedIn) {
+      try {
+        await fs.rm(join(out, entry), { recursive: true, force: true });
+      } catch {
+        restored = false;
+      }
+    }
+    for (const entry of movedAside) {
+      try {
+        await fs.rename(join(backup, entry), join(out, entry));
+      } catch {
+        restored = false;
+      }
+    }
+    if (!restored) {
+      throw new Error(
+        `Could not replace the sequence (${(error as Error).message}). The previous sequence is kept in ${backup}.`,
+      );
+    }
+    await rm(backup, { recursive: true, force: true });
+    throw error;
+  }
+  await rm(backup, { recursive: true, force: true });
 }
 
 export async function generateSequence(options: GenerateOptions, log: Log = () => {}): Promise<GenerateResult> {
@@ -65,20 +124,32 @@ export async function generateSequence(options: GenerateOptions, log: Log = () =
   const duration = parseDuration(probe.stderr);
   if (duration === null) throw new UsageError(`Could not read the video duration of ${options.input}.`);
 
-  await prepareOutput(options.out, options.force);
+  // Asking for more frames than the source has only duplicates frames (more bytes, no smoother motion).
+  const rate = parseFrameRate(probe.stderr);
+  const available = availableFrames(duration, rate);
+  const frames = Math.min(options.frames, available);
+  if (frames < 2) throw new UsageError("The video produced fewer than 2 frames.");
+  if (frames < options.frames) {
+    log(`The video only has ${frames} frames; extracting ${frames} instead of ${options.frames}.`);
+  }
+
+  const previous = await checkOutput(options.out, options.force);
+  await mkdir(options.out, { recursive: true });
   const tmp = await mkdtemp(join(tmpdir(), "scrollframe-"));
+  // Everything is written here first, so a failure never leaves a half-replaced sequence.
+  const staging = await mkdtemp(join(options.out, ".scrollframe-new-"));
 
   try {
     const plan = planSets(options.widths);
     const largest = plan[plan.length - 1]!.width;
-    const fps = samplingFps(options.frames, duration);
-    log(`Extracting ${options.frames} frames from ${duration.toFixed(2)}s of video...`);
+    const fps = samplingFps(frames, duration);
+    log(`Extracting ${frames} frames from ${duration.toFixed(2)}s of video...`);
     const extract = await run(ffmpeg, [
       "-hide_banner",
       "-loglevel", "error",
       "-i", options.input,
       "-vf", `fps=${fps},scale='min(${largest},iw)':-2:flags=lanczos`,
-      "-frames:v", String(options.frames),
+      "-frames:v", String(frames),
       join(tmp, "%06d.png"),
     ]);
     if (extract.code !== 0) throw new Error(`ffmpeg failed:\n${extract.stderr}`);
@@ -94,7 +165,7 @@ export async function generateSequence(options: GenerateOptions, log: Log = () =
       : { quality: options.quality, effort: 6, smartSubsample: true };
 
     for (const set of plan) {
-      const dir = join(options.out, set.dir);
+      const dir = join(staging, set.dir);
       await mkdir(dir, { recursive: true });
       let size = { width: set.width, height: 0 };
       let bytes = 0;
@@ -116,10 +187,11 @@ export async function generateSequence(options: GenerateOptions, log: Log = () =
     }
 
     const manifest = buildManifest(options, sources.length, sets);
-    const manifestPath = join(options.out, "manifest.json");
-    await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
-    return { manifest, manifestPath, bytesBySet };
+    await writeFile(join(staging, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`);
+    await swapIntoPlace(options.out, staging, previous);
+    return { manifest, manifestPath: join(options.out, "manifest.json"), bytesBySet };
   } finally {
     await rm(tmp, { recursive: true, force: true });
+    await rm(staging, { recursive: true, force: true });
   }
 }
