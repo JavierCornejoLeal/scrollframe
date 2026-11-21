@@ -6,7 +6,7 @@
     "sequence": "scrollframe input.mp4 --out public/sequence --frames 60 --widths 320,640,960 --force && node plain.mjs",
     "build": "vite build",
     "preview": "vite preview --port 4173 --strictPort",
-    "test:cli": "node --test cli.test.mjs",
+    "test:cli": "node --test cli.test.mjs scaffold.test.mjs",
     "test:browser": "playwright test"
   },
   "allowScripts": {
