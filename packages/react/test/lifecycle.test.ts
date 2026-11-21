@@ -108,3 +108,22 @@ describe("ScrollSequence lifecycle", () => {
     expect(engines).toHaveLength(1);
   });
 });
+
+describe("ScrollSequence keys", () => {
+  it("renders one <source> per set without duplicate React keys when two sets share a width", () => {
+    const twins = {
+      ...manifest,
+      sets: [
+        { name: "phone", maxViewportWidth: 767, width: 720, height: 405, dir: "phone" },
+        { name: "phone-hd", maxViewportWidth: 767, width: 1080, height: 608, dir: "phone-hd" },
+        { name: "desktop", maxViewportWidth: null, width: 1920, height: 1080, dir: "desktop" },
+      ],
+    };
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+    render({ manifest: twins });
+    const keyWarnings = errors.mock.calls.filter((args) => args.some((a) => String(a).includes("same key")));
+    errors.mockRestore();
+    expect(keyWarnings).toEqual([]);
+    expect(host.querySelectorAll("source")).toHaveLength(2);
+  });
+});

@@ -26,6 +26,7 @@ export default function Home() {
 | [`@scrollframe/cli`](packages/cli) | CLI (`scrollframe` command): video → optimized WebP frames for mobile, tablet and desktop + `manifest.json` |
 | [`@scrollframe/core`](packages/core) | Framework-agnostic canvas engine |
 | [`@scrollframe/react`](packages/react) | `<ScrollSequence>` component for React and Next.js |
+| [`@scrollframe/element`](packages/element) | `<scroll-sequence>` custom element for any framework (Angular, Vue, Svelte, Astro) or plain HTML |
 
 ## How it stays fast
 
@@ -99,6 +100,107 @@ Or install ffmpeg on your system, or pass `--ffmpeg <path>` / set `FFMPEG_PATH`.
 | `baseUrl` | manifest | Serve frames from a CDN |
 | `onProgress` | — | `(progress, frameIndex) => void` |
 | `className`, `style`, `overlayClassName` | — | Styling hooks |
+
+## Any framework or plain HTML: `<scroll-sequence>`
+
+`@scrollframe/element` is a standard custom element, so it works wherever HTML does: Angular, Vue, Svelte, Astro, or pages rendered by PHP, Django, Rails or a static site. It renders in the light DOM: overlay children stay real, indexable HTML, styled by your own CSS. Children are never moved, so framework-managed content keeps working.
+
+### Plain HTML (no build step)
+
+```html
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@scrollframe/element@0.2/dist/scroll-sequence.css" />
+<script src="https://cdn.jsdelivr.net/npm/@scrollframe/element@0.2" defer></script>
+
+<scroll-sequence src="/sequence/manifest.json" alt="Barista pouring latte art" scroll-length="400vh">
+  <h1>Specialty coffee, roasted in Madrid</h1>
+</scroll-sequence>
+```
+
+Load the stylesheet in `<head>`: it lays out the poster and the overlay before the script runs.
+
+### Server-rendered poster (best LCP)
+
+With only `src`, the poster appears once the manifest has been fetched. Render the stage on the server and the poster is painted with the HTML; the element adopts it instead of rendering its own:
+
+```js
+import { readFile } from "node:fs/promises";
+import { parseManifest, renderStageMarkup } from "@scrollframe/core";
+
+const alt = "Barista pouring latte art";
+const manifest = parseManifest(JSON.parse(await readFile("public/sequence/manifest.json", "utf8")));
+const html = `<scroll-sequence src="/sequence/manifest.json" alt="${alt}">
+  ${renderStageMarkup(manifest, { alt })}
+  <h1>Specialty coffee, roasted in Madrid</h1>
+</scroll-sequence>`;
+```
+
+### With a bundler
+
+```js
+import "@scrollframe/element"; // registers <scroll-sequence>
+import "@scrollframe/element/style.css";
+```
+
+The `manifest` property takes the imported JSON instead of fetching `src`.
+
+**Angular** (standalone component; files in `public/` are served from the site root):
+
+```ts
+import { CUSTOM_ELEMENTS_SCHEMA, Component } from "@angular/core";
+import "@scrollframe/element";
+
+@Component({
+  selector: "app-hero",
+  schemas: [CUSTOM_ELEMENTS_SCHEMA],
+  template: `
+    <scroll-sequence src="/sequence/manifest.json" alt="Barista pouring latte art" (sf-progress)="onProgress($event)">
+      <h1>Specialty coffee, roasted in Madrid</h1>
+    </scroll-sequence>
+  `,
+})
+export class HeroComponent {
+  onProgress(event: Event) {
+    const { progress, frame } = (event as CustomEvent<{ progress: number; frame: number }>).detail;
+  }
+}
+```
+
+Add `@scrollframe/element/style.css` to the `styles` array in `angular.json`. To pass the JSON instead of fetching `src`, import it with a path relative to the component (for `src/app/hero/hero.ts`: `import manifest from "../../../public/sequence/manifest.json"`) and bind `[manifest]="manifest"`.
+
+**Vue** (tell the compiler the tag is a custom element):
+
+```js
+// vite.config.js
+vue({ template: { compilerOptions: { isCustomElement: (tag) => tag === "scroll-sequence" } } });
+```
+
+```vue
+<script setup>
+import "@scrollframe/element";
+import "@scrollframe/element/style.css";
+import manifest from "../public/sequence/manifest.json";
+</script>
+
+<template>
+  <scroll-sequence :manifest.prop="manifest" alt="Barista pouring latte art" @sf-progress="(e) => console.log(e.detail)">
+    <h1>Specialty coffee, roasted in Madrid</h1>
+  </scroll-sequence>
+</template>
+```
+
+### Attributes, property and events
+
+| Name | Description |
+| --- | --- |
+| `src` | URL of `manifest.json`. Ignored when the `manifest` property is set. |
+| `manifest` (property) | The manifest object, e.g. an imported `manifest.json`. |
+| `alt` | Describes the scene: the poster's alt text, the image search engines index. |
+| `scroll-length` | Scroll distance of the section (default `300vh`). Longer = slower playback. |
+| `base-url` | Overrides the manifest `baseUrl` (e.g. a CDN). |
+| `priority="false"` | For a sequence below the fold: the poster loads lazily. |
+| `sf-progress` event | `detail: { progress, frame }` while scrolling. `--sf-progress` is also set for CSS. |
+| `sf-ready` event | The first frame is painted on the canvas. |
+| `sf-error` event | `detail: { error }`: the manifest could not be loaded or is invalid. |
 
 ## Development
 

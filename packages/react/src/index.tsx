@@ -1,9 +1,4 @@
-import {
-  ScrollSequence as Engine,
-  parseManifest,
-  posterUrl,
-  type SequenceManifest,
-} from "@scrollframe/core";
+import { ScrollSequence as Engine, parseManifest, posterImage, type SequenceManifest } from "@scrollframe/core";
 import { useEffect, useMemo, useRef, type CSSProperties, type ReactNode } from "react";
 
 export { PROGRESS_CSS_VAR, type SequenceManifest } from "@scrollframe/core";
@@ -67,29 +62,27 @@ export function ScrollSequence({
     return () => engine.destroy();
   }, [manifest, baseUrl]);
 
-  const largest = manifest.sets[manifest.sets.length - 1]!;
+  const poster = useMemo(() => posterImage(manifest, baseUrl), [manifest, baseUrl]);
 
   return (
     <section ref={containerRef} className={className} style={{ position: "relative", height: scrollLength, ...style }}>
       <div style={{ position: "sticky", top: 0, height: "100svh", overflow: "hidden" }}>
         <picture>
-          {manifest.sets
-            .filter((set) => set.maxViewportWidth !== null)
-            .map((set) => (
-              <source
-                key={set.name}
-                media={`(max-width: ${set.maxViewportWidth}px)`}
-                srcSet={posterUrl(manifest, set, baseUrl)}
-                width={set.width}
-                height={set.height}
-                type="image/webp"
-              />
-            ))}
+          {poster.sources.map((source) => (
+            <source
+              key={source.srcset}
+              media={source.media}
+              srcSet={source.srcset}
+              width={source.width}
+              height={source.height}
+              type={source.type}
+            />
+          ))}
           <img
-            src={posterUrl(manifest, largest, baseUrl)}
+            src={poster.img.src}
             alt={alt}
-            width={largest.width}
-            height={largest.height}
+            width={poster.img.width}
+            height={poster.img.height}
             loading={priority ? "eager" : "lazy"}
             fetchPriority={priority ? "high" : "auto"}
             decoding="async"
