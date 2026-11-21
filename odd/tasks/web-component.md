@@ -15,7 +15,7 @@ Branch: `feat/web-component` · Baseline: `84955e4` · Delivery: `ask-on-risk`, 
 - [x] T1 (S3) core `posterImage` (data) + `renderPosterMarkup` (HTML string, escaped); React uses `posterImage`; React SSR output pinned by a regression test — inline
 - [x] T2 (S1, S2) `@scrollframe/element` package: lifecycle, `src` / `.manifest`, `base-url`, events `sf-progress` / `sf-ready`, idempotent SSR-safe define — inline
 - [x] T2b (S1, S3) progressive enhancement: reuse a server-rendered poster already inside the element, so `src` does not delay the LCP image — inline
-- [ ] T3 (S1) global `<script>` bundle (IIFE, core included) — inline
+- [x] T3 (S1) global `<script>` bundle (IIFE, core included) — inline
 - [ ] T4 (S1) CI and release wiring: 4 tarballs, changesets `linked`, publish guard, publint/attw — inline
 - [ ] T5 (S1, S2) browser e2e on a plain HTML page — inline
 - [ ] T6 (S1) README "Any framework / plain HTML" + minor changeset — inline
@@ -36,3 +36,8 @@ Branch: `feat/web-component` · Baseline: `84955e4` · Delivery: `ask-on-risk`, 
 - L12: T2b mutation checks: not adopting the server poster (1 fail), ignoring the server stage (2), new canvas each time (1), not removing the old poster on src change (1); restored 16/16.
 - L13: T2b real-browser check (Chromium, manifest delayed 2 s): src-only page has no poster at 700 ms; server-rendered page has the poster loaded and visible (720 px) at 700 ms, the same `<img>` node after `sf-ready`, one poster request, one stage, one canvas, no errors.
 - L14: Known gap (for T3/T6): before the element's script runs, the host has no grid styles, so overlay children render below the stage until upgrade. Needs a static stylesheet or documented host styles.
+- L15: T3 RED: `src/scroll-sequence.css` missing (stylesheet sync test). GREEN: `scrollSequenceStyles(tag)` exported; static `src/scroll-sequence.css` equals it (test); tsup builds ESM/CJS + a minified IIFE (`dist/index.global.js`, global `ScrollFrame`, core bundled, 4.6 KB gzip) and copies the CSS to `dist/`. `unpkg`/`jsdelivr` point at the IIFE; `./style.css` export added; `./global` export dropped (an untyped IIFE in a `type: module` package confuses Node).
+- L16: Fixed a build race: two tsup configs run in parallel, so a per-config `clean` could delete the other's output; `dist` is now removed once by the build script (stale file check passed).
+- L17: publint clean (suggestion only: `engines.node`, same as core). attw: main entry green in node10/node16 CJS/node16 ESM/bundler; `./style.css` must be excluded (`attw <tgz> --exclude-entrypoints ./style.css`, tarball first: the flag is variadic). For T4.
+- L18: T3 browser check, Chromium/Firefox/WebKit, plain HTML with only `<link>` + `<script defer>` (script delayed 2 s): before the script runs the poster is loaded in both pages; without the static CSS the overlay sits below the poster (top 752), with it the overlay is on the poster (top 32), closing the L14 gap. After the script: `window.ScrollFrame` defined, frame 30/60 at 50% scroll, no errors. A first Firefox failure was my test server crashing on `/favicon.ico` (writeHead before readFile); fixed, not a product bug.
+- L19: For T4: `e2e/scripts/prepare.mjs` expects exactly 3 tarballs; `pnpm -r pack` now produces 4, so CI e2e will fail until T4.

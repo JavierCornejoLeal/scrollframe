@@ -29,12 +29,13 @@ const OBSERVED = ["src", "alt", "base-url", "priority", "scroll-length"] as cons
 const Base = (typeof HTMLElement === "undefined" ? class {} : HTMLElement) as typeof HTMLElement;
 
 /**
- * The stylesheet is shared by every instance in a document (or shadow root).
+ * The element's stylesheet. Injected once per document (or shadow root) and also shipped as
+ * `dist/scroll-sequence.css`, which can be loaded in <head> so the layout is right before any script runs.
  * Children are never moved: frameworks (Angular, Vue...) insert nodes relative to anchors
  * that must stay direct children. Instead, the stage and every child share one grid cell
  * and stick to the top of the viewport while the element scrolls past.
  */
-function stylesFor(tag: string): string {
+export function scrollSequenceStyles(tag: string = DEFAULT_TAG_NAME): string {
   return (
     `${tag}{display:grid;position:relative;height:var(--sf-scroll-length,300vh)}` +
     `${tag}>*{grid-area:1/1;align-self:start;position:sticky;top:0}` +
@@ -51,7 +52,7 @@ function ensureStyles(root: Document | ShadowRoot, tag: string): void {
   styledRoots.set(root, tags);
   const style = document.createElement("style");
   style.dataset.scrollframe = tag;
-  style.textContent = stylesFor(tag);
+  style.textContent = scrollSequenceStyles(tag);
   (root instanceof Document ? root.head : root).append(style);
 }
 

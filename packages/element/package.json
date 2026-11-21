@@ -13,10 +13,17 @@
     "url": "https://github.com/JavierCornejoLeal/scrollframe/issues"
   },
   "type": "module",
-  "sideEffects": true,
+  "sideEffects": [
+    "./dist/index.js",
+    "./dist/index.cjs",
+    "./dist/index.global.js",
+    "*.css"
+  ],
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "unpkg": "./dist/index.global.js",
+  "jsdelivr": "./dist/index.global.js",
   "exports": {
     ".": {
       "import": {
@@ -27,7 +34,8 @@
         "types": "./dist/index.d.cts",
         "default": "./dist/index.cjs"
       }
-    }
+    },
+    "./style.css": "./dist/scroll-sequence.css"
   },
   "files": [
     "dist"
@@ -40,7 +48,7 @@
     "image-sequence"
   ],
   "scripts": {
-    "build": "tsup src/index.ts --format esm,cjs --dts --clean",
+    "build": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\" && tsup",
     "typecheck": "tsc --noEmit -p .",
     "prepublishOnly": "node ../../scripts/require-pnpm-publish.mjs"
   },

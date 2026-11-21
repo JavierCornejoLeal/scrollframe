@@ -1,0 +1,1 @@
+scroll-sequence{display:grid;position:relative;height:var(--sf-scroll-length,300vh)}scroll-sequence>*{grid-area:1/1;align-self:start;position:sticky;top:0}scroll-sequence>[data-sf-stage]>canvas{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;pointer-events:none}
