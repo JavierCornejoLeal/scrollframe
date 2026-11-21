@@ -125,6 +125,14 @@ export async function runCli(argv: string[], io: CliIO, overrides: Partial<RunDe
   try {
     plan = planScaffold(deps.detect(deps.cwd), options, flags);
   } catch (error) {
+    // Explicit set-up options cannot apply to a project that cannot be read: refuse, do not drop them.
+    const setupFlag = flags.framework ? "--framework" : flags.name ? "--name" : !flags.install ? "--no-install" : null;
+    if (setupFlag) {
+      io.stderr.write(
+        `${(error as Error).message}\n${setupFlag} needs a readable project; fix it or run without set-up options. Nothing was changed.\n`,
+      );
+      return 2;
+    }
     plan = framesOnlyPlan(options, (error as Error).message);
   }
   io.stdout.write(formatPlan(plan));

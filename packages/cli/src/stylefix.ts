@@ -30,6 +30,12 @@ function globalStylesheet(project: ProjectInfo, framework: Framework): string | 
   }
 }
 
+/** The selector of a rule: without comments or preceding statements such as an @import ending in ";". */
+const selectorText = (prefix: string) => {
+  const withoutComments = prefix.replace(/\/\*[\s\S]*?\*\//g, "");
+  return withoutComments.slice(withoutComments.lastIndexOf(";") + 1);
+};
+
 const isHtmlOrBody = (selectors: string) => selectors.split(",").some((s) => /^(html|body)$/i.test(s.trim()));
 
 /**
@@ -41,7 +47,7 @@ const isHtmlOrBody = (selectors: string) => selectors.split(",").some((s) => /^(
 export function fixStickyOverflow(css: string): string | null {
   // Innermost rules only: also matches html/body rules nested in @media.
   const fixed = css.replace(/([^{}]*)\{([^{}]*)\}/g, (rule, selectors: string, body: string) =>
-    isHtmlOrBody(selectors.replace(/^[\s;]*/, "")) ? `${selectors}{${body.replace(/(overflow-x\s*:\s*)hidden\b/gi, "$1clip")}}` : rule,
+    isHtmlOrBody(selectorText(selectors)) ? `${selectors}{${body.replace(/(overflow-x\s*:\s*)hidden\b/gi, "$1clip")}}` : rule,
   );
   return fixed === css ? null : fixed;
 }

@@ -49,10 +49,10 @@ export function findStickyBlocker(container: Element): { element: Element; prope
   for (let el = container.parentElement; el && el !== root; el = el.parentElement) {
     if (el === container.ownerDocument.body && !rootClips) continue;
     const style = getComputedStyle(el);
-    for (const property of ["overflow-x", "overflow-y"] as const) {
-      const value = style.getPropertyValue(property);
-      if (SCROLL_CONTAINER.has(value)) return { element: el, property, value };
-    }
+    const axes = (["overflow-x", "overflow-y"] as const).map((property) => ({ property, value: style.getPropertyValue(property) }));
+    // A hidden axis makes the other compute to auto, so report the hidden one: that is what was written.
+    const blocking = axes.find((axis) => axis.value === "hidden") ?? axes.find((axis) => SCROLL_CONTAINER.has(axis.value));
+    if (blocking) return { element: el, ...blocking };
   }
   return null;
 }

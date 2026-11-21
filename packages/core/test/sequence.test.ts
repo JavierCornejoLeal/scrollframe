@@ -388,3 +388,22 @@ describe("sticky blockers: scrolling containers", () => {
     shell.remove();
   });
 });
+
+describe("sticky blockers: one hidden axis", () => {
+  it("recommends clip for the hidden axis even when the other one computes to auto", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const wrapper = document.createElement("div");
+    wrapper.className = "page";
+    // Browsers compute overflow-x: auto when only overflow-y is hidden.
+    wrapper.style.overflowX = "auto";
+    wrapper.style.overflowY = "hidden";
+    document.body.append(wrapper);
+    const container = document.createElement("section");
+    container.getBoundingClientRect = () => ({ top: 0, height: 3000 }) as DOMRect;
+    wrapper.append(container);
+    live.push(new ScrollSequence({ container, canvas: document.createElement("canvas"), manifest }).start());
+    expect(warn.mock.calls[0]![0]).toMatch(/^scrollframe: div\.page has "overflow-y: hidden".*Use "overflow-y: clip" instead/);
+    warn.mockRestore();
+    wrapper.remove();
+  });
+});

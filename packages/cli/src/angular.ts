@@ -4,7 +4,7 @@ import type { ProjectInfo } from "./detect.js";
 import type { FileEdit } from "./stylefix.js";
 
 const STYLESHEET = "@scrollframe/element/style.css";
-const manual = (path: string) => `add "${STYLESHEET}" to "styles" yourself.`;
+const ADD_BY_HAND = `add "${STYLESHEET}" to "styles" yourself.`;
 
 interface AngularJson {
   projects?: Record<string, { architect?: { build?: { options?: { styles?: unknown[] } } } }>;
@@ -32,16 +32,16 @@ export function planAngularStyles(project: ProjectInfo): { edit: FileEdit | null
     before = readFileSync(join(project.root, path), "utf8");
     json = JSON.parse(before) as AngularJson;
   } catch {
-    return { edit: null, note: `Could not read ${path}: ${manual(path)}` };
+    return { edit: null, note: `Could not read ${path}: ${ADD_BY_HAND}` };
   }
   const options = Object.values(json.projects ?? {})[0]?.architect?.build?.options;
   if (!options || (options.styles !== undefined && !Array.isArray(options.styles))) {
-    return { edit: null, note: `Could not find the build styles in ${path}: ${manual(path)}` };
+    return { edit: null, note: `Could not find the build styles in ${path}: ${ADD_BY_HAND}` };
   }
   if (options.styles?.includes(STYLESHEET)) return { edit: null, note: null };
   const format = formatLike(before, json);
   if (!format) {
-    return { edit: null, note: `${path} is not formatted like \`ng new\` writes it, so it is left as is: ${manual(path)}` };
+    return { edit: null, note: `${path} is not formatted like \`ng new\` writes it, so it is left as is: ${ADD_BY_HAND}` };
   }
   options.styles = [...(options.styles ?? []), STYLESHEET];
   return {

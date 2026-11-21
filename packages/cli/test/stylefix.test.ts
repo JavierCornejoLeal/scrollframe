@@ -27,6 +27,11 @@ describe("fixStickyOverflow", () => {
     );
   });
 
+  it("still finds the rule after a comment or an @import", () => {
+    expect(fixStickyOverflow("/* base */\nhtml, body { overflow-x: hidden; }")).toBe("/* base */\nhtml, body { overflow-x: clip; }");
+    expect(fixStickyOverflow('@import "theme.css";\nbody { overflow-x: hidden; }')).toBe('@import "theme.css";\nbody { overflow-x: clip; }');
+  });
+
   it("returns null when there is nothing to fix", () => {
     expect(fixStickyOverflow("html, body { overflow-x: clip; }")).toBeNull();
     expect(fixStickyOverflow("body { margin: 0 }")).toBeNull();

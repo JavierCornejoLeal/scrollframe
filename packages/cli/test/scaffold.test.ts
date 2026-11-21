@@ -421,3 +421,12 @@ describe("runCli scaffold: Angular and Vue end to end", () => {
     expect(out.stdout).toContain("Tell Vue that <scroll-sequence> is a custom element, in vite.config:");
   });
 });
+
+describe("runCli scaffold: explicit flags when the project cannot be read", () => {
+  it("refuses --framework with an unreadable package.json instead of dropping it", async () => {
+    const { out, calls, run } = harness(project({ "package.json": "{ broken" }));
+    expect(await run("hero.mp4", "--framework", "vue")).toBe(2);
+    expect(out.stderr).toMatch(/^Could not read .*package\.json: .*\n--framework needs a readable project; fix it or run without set-up options\. Nothing was changed\.\n$/);
+    expect(calls.generate).toEqual([]);
+  });
+});

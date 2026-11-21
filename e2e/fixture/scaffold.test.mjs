@@ -114,6 +114,9 @@ test("Vue: component, and the vite.config line printed instead of edited", () =>
   assert.equal(read(root, "vite.config.js"), "export default {};\n");
 });
 
+// Deliberately a real install from the public registry: it is the only CI check of the Windows
+// shell path in spawnCommand. It installs the published package (not this build), so it checks
+// the install mechanics, not the package contents, and needs network access.
 test("React: installs @scrollframe/react for real with npm (the Windows shell path in CI)", () => {
   const root = project("react", { "package.json": { name: "react-sample", private: true, dependencies: { react: "19.2.0" } }, "src/": "" });
   const { code, stdout, stderr } = cli(root, ["--yes"]);
