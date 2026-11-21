@@ -5,3 +5,5 @@ coverage
 *.log
 .codegraph
 e2e-work*
+# Local AI runtime state
+.atl/
