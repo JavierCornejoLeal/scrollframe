@@ -316,3 +316,56 @@ describe("ScrollSequence recovery", () => {
     expect(FakeImage.requests).toEqual([]);
   });
 });
+
+describe("sticky blockers", () => {
+  /** Puts a fresh section inside `wrapper` (in the document) and starts an engine on it. */
+  function startInside(wrapper: HTMLElement) {
+    const container = document.createElement("section");
+    container.getBoundingClientRect = () => ({ top: 0, height: 3000 }) as DOMRect;
+    wrapper.append(container);
+    const engine = new ScrollSequence({ container, canvas: document.createElement("canvas"), manifest }).start();
+    live.push(engine);
+    return engine;
+  }
+
+  let warn: ReturnType<typeof vi.spyOn>;
+  beforeEach(() => {
+    warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+  });
+  afterEach(() => {
+    warn.mockRestore();
+    document.documentElement.removeAttribute("style");
+    document.body.removeAttribute("style");
+    document.body.replaceChildren();
+  });
+
+  it("warns once when an ancestor's overflow stops the sequence from staying pinned", () => {
+    const wrapper = document.createElement("div");
+    wrapper.className = "page";
+    wrapper.style.overflowX = "hidden";
+    document.body.append(wrapper);
+    startInside(wrapper);
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn.mock.calls[0]![0]).toBe(
+      'scrollframe: div.page has "overflow-x: hidden", so the sequence cannot stay pinned while scrolling. Use "overflow-x: clip" instead: it hides the overflow the same way without creating a scroll container.',
+    );
+  });
+
+  it("warns for body when html also has overflow (the Next.js 16 default globals.css)", () => {
+    document.documentElement.style.overflowX = "hidden";
+    document.body.style.overflowX = "hidden";
+    startInside(document.body);
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn.mock.calls[0]![0]).toMatch(/^scrollframe: body has "overflow-x: hidden"/);
+  });
+
+  it("does not warn when only body has overflow (it applies to the viewport) or with overflow: clip", () => {
+    document.body.style.overflowX = "hidden";
+    startInside(document.body);
+    const wrapper = document.createElement("div");
+    wrapper.style.overflowX = "clip";
+    document.body.append(wrapper);
+    startInside(wrapper);
+    expect(warn).not.toHaveBeenCalled();
+  });
+});

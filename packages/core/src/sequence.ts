@@ -30,6 +30,33 @@ function prefersStaticMedia(): boolean {
   return reducedMotion || connection?.saveData === true;
 }
 
+const SCROLL_CONTAINER = new Set(["hidden", "auto", "scroll"]);
+
+const describeElement = (el: Element) =>
+  el.localName + (el.id ? `#${el.id}` : "") + (el.classList.length ? `.${[...el.classList].join(".")}` : "");
+
+/**
+ * The first ancestor whose overflow makes it a scroll container, which stops `position: sticky`
+ * from pinning the sequence to the viewport. `body` only counts when `html` has an overflow too:
+ * otherwise the browser applies body's overflow to the viewport and sticky still works.
+ */
+export function findStickyBlocker(container: Element): { element: Element; property: string; value: string } | null {
+  const root = container.ownerDocument.documentElement;
+  const rootStyle = getComputedStyle(root);
+  // An unset value reads as "" in some environments (jsdom) and "visible" in browsers.
+  const clips = (value: string) => value !== "" && value !== "visible";
+  const rootClips = clips(rootStyle.overflowX) || clips(rootStyle.overflowY);
+  for (let el = container.parentElement; el && el !== root; el = el.parentElement) {
+    if (el === container.ownerDocument.body && !rootClips) continue;
+    const style = getComputedStyle(el);
+    for (const property of ["overflow-x", "overflow-y"] as const) {
+      const value = style.getPropertyValue(property);
+      if (SCROLL_CONTAINER.has(value)) return { element: el, property, value };
+    }
+  }
+  return null;
+}
+
 /**
  * Scroll-scrubbed image sequence painted on a canvas.
  * Nothing is downloaded until the container gets close to the viewport, and only the
@@ -64,6 +91,14 @@ export class ScrollSequence {
   start(): this {
     if (this.started || this.destroyed || prefersStaticMedia()) return this;
     this.started = true;
+    const blocker = findStickyBlocker(this.options.container);
+    if (blocker) {
+      const { element, property, value } = blocker;
+      console.warn(
+        `scrollframe: ${describeElement(element)} has "${property}: ${value}", so the sequence cannot stay pinned while scrolling. ` +
+          `Use "${property}: clip" instead: it hides the overflow the same way without creating a scroll container.`,
+      );
+    }
     this.observer = new IntersectionObserver(
       (entries) => {
         if (entries.some((entry) => entry.isIntersecting)) {
