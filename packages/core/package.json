@@ -1,6 +1,6 @@
 {
   "name": "@scrollframe/core",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Framework-agnostic scroll-driven image sequence engine (canvas, lazy loading, Core Web Vitals friendly).",
   "license": "MIT",
   "repository": {

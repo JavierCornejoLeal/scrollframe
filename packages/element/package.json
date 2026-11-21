@@ -1,6 +1,6 @@
 {
   "name": "@scrollframe/element",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Framework-agnostic <scroll-sequence> custom element for scroll storytelling: works in Angular, Vue, Svelte, Astro and plain HTML.",
   "license": "MIT",
   "repository": {
