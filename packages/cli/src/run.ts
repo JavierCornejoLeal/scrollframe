@@ -1,7 +1,7 @@
-import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
 import { detectProject } from "./detect.js";
 import { generateSequence } from "./generate.js";
+import { spawnCommand } from "./install.js";
 import { HELP, UsageError, parseCommandLine, type GenerateOptions } from "./options.js";
 import { formatPlan, framesOnlyPlan, planScaffold, setupHint, type ScaffoldPlan } from "./scaffold.js";
 
@@ -52,13 +52,7 @@ function defaultDeps(io: CliIO): RunDeps {
       }),
     generate: generateSequence,
     detect: detectProject,
-    runCommand: (command, args, cwd) =>
-      new Promise((resolve, reject) => {
-        // Windows needs a shell for the npm/pnpm/yarn .cmd shims.
-        const child = spawn(command, args, { cwd, stdio: "inherit", shell: process.platform === "win32" });
-        child.on("error", reject);
-        child.on("exit", (code) => (code === 0 ? resolve() : reject(new Error(`exit code ${code}`))));
-      }),
+    runCommand: spawnCommand,
   };
 }
 
