@@ -4,6 +4,7 @@ import { dirname, join } from "node:path";
 import { detectProject } from "./detect.js";
 import { generateSequence } from "./generate.js";
 import { spawnCommand } from "./install.js";
+import type { SequenceManifest } from "@scrollframe/core";
 import { HELP, UsageError, parseCommandLine, type GenerateOptions } from "./options.js";
 import { formatPlan, framesOnlyPlan, planScaffold, setupHint, type ScaffoldPlan } from "./scaffold.js";
 
@@ -61,14 +62,14 @@ function defaultDeps(io: CliIO): RunDeps {
 const reactSnippet = (manifestPath: string) =>
   `import manifest from "./${manifestPath}";\n<ScrollSequence manifest={manifest} alt="Describe the scene" />\n`;
 
-type GenerateOutcome = { ok: true; manifestPath: string } | { ok: false; exitCode: number };
+type GenerateOutcome = { ok: true; manifestPath: string; manifest: SequenceManifest } | { ok: false; exitCode: number };
 
 /** Generates the frames, reporting a failure on stderr with its exit code. */
 async function runGenerate(options: GenerateOptions, io: CliIO, deps: RunDeps): Promise<GenerateOutcome> {
   try {
     const { manifestPath, manifest } = await deps.generate(options, (line) => io.stdout.write(`${line}\n`));
     io.stdout.write(`\nDone: ${manifest.frameCount} frames -> ${manifestPath}\n\n`);
-    return { ok: true, manifestPath };
+    return { ok: true, manifestPath, manifest };
   } catch (error) {
     if (error instanceof UsageError) {
       io.stderr.write(`${error.message}\n`);
@@ -149,12 +150,12 @@ export async function runCli(argv: string[], io: CliIO, overrides: Partial<RunDe
   }
 
   if (plan.component) {
-    const { path, contents, usage } = plan.component;
+    const { path, render, usage } = plan.component;
     const target = join(deps.cwd, path);
     try {
       mkdirSync(dirname(target), { recursive: true });
       // "wx" fails if the file appeared since the plan was made: never overwrite the user's code.
-      writeFileSync(target, contents, { flag: "wx" });
+      writeFileSync(target, render(result.manifest), { flag: "wx" });
     } catch (error) {
       io.stderr.write(`Could not create ${path}: ${(error as Error).message}\n`);
       return 1;

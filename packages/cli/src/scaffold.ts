@@ -1,9 +1,13 @@
 import { existsSync } from "node:fs";
+import { createRequire } from "node:module";
 import { basename, extname, join } from "node:path";
 import type { Framework, PackageManager, ProjectInfo } from "./detect.js";
 import { deriveBaseUrl, type GenerateOptions, type ScaffoldFlags } from "./options.js";
 import { planOverflowFixes, type FileEdit } from "./stylefix.js";
 import { componentFor, type ComponentFile } from "./templates.js";
+
+/** This CLI's version (package.json sits next to src/ and dist/). */
+export const CLI_VERSION: string = (createRequire(import.meta.url)("../package.json") as { version: string }).version;
 
 const LABELS: Record<Framework, string> = {
   next: "Next.js",
@@ -78,7 +82,14 @@ export function planScaffold(project: ProjectInfo, generate: GenerateOptions, fl
   let component: ComponentFile | null = null;
   if (framework !== null) {
     const name = flags.name ?? componentName(generate.input);
-    component = componentFor(framework, { project, name, video: generate.input, out: options.out, baseUrl: options.baseUrl });
+    component = componentFor(framework, {
+      project,
+      name,
+      video: generate.input,
+      out: options.out,
+      baseUrl: options.baseUrl,
+      version: CLI_VERSION,
+    });
     if (component && existsSync(join(project.root, component.path))) {
       notes.push(`${component.path} already exists and will not be changed (use --name to create another one).`);
       component = null;

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { componentFor, type ProjectInfo } from "../src/index.js";
+import { parseManifest } from "@scrollframe/core";
+import { componentFor, type ComponentFile, type ProjectInfo } from "../src/index.js";
 
 const base: ProjectInfo = {
   root: "/project",
@@ -19,8 +20,24 @@ const ctx = (project: Partial<ProjectInfo>, extra: object = {}) => ({
   video: "hero.mp4",
   out: "public/sequence",
   baseUrl: "/sequence",
+  version: "0.2.0",
   ...extra,
 });
+
+const manifest = parseManifest({
+  version: 1,
+  frameCount: 60,
+  baseUrl: "/sequence",
+  pattern: "frame-{index}.webp",
+  padding: 4,
+  poster: "poster.webp",
+  sets: [
+    { name: "mobile", maxViewportWidth: 767, width: 320, height: 180, dir: "mobile" },
+    { name: "desktop", maxViewportWidth: null, width: 960, height: 540, dir: "desktop" },
+  ],
+});
+/** The file as written after the frames exist. */
+const written = (file: ComponentFile | null) => file && { path: file.path, contents: file.render(manifest), usage: file.usage };
 
 const REACT_TSX = `import { ScrollSequence } from "@scrollframe/react";
 import manifest from "../public/sequence/manifest.json";
@@ -37,7 +54,7 @@ export default function HeroSequence() {
 
 describe("componentFor: Next.js", () => {
   it("App Router + TypeScript: components/<Name>.tsx, used from app/page.tsx", () => {
-    expect(componentFor("next", ctx({}))).toEqual({
+    expect(written(componentFor("next", ctx({})))).toEqual({
       path: "components/HeroSequence.tsx",
       contents: REACT_TSX,
       usage: ["Render it in a page, e.g. app/page.tsx:", '  import HeroSequence from "../components/HeroSequence";', "  <HeroSequence />"],
@@ -45,7 +62,7 @@ describe("componentFor: Next.js", () => {
   });
 
   it("App Router under src/ + JavaScript: src/components/<Name>.jsx with a matching manifest path", () => {
-    const file = componentFor("next", ctx({ srcDir: true, typescript: false }))!;
+    const file = written(componentFor("next", ctx({ srcDir: true, typescript: false })))!;
     expect(file.path).toBe("src/components/HeroSequence.jsx");
     expect(file.contents).toContain('import manifest from "../../public/sequence/manifest.json";');
     expect(file.usage[0]).toBe("Render it in a page, e.g. src/app/page.jsx:");
@@ -60,7 +77,7 @@ describe("componentFor: Next.js", () => {
 
 describe("componentFor: React", () => {
   it("Vite + TypeScript: src/components/<Name>.tsx, used from src/App.tsx", () => {
-    expect(componentFor("react", ctx({ framework: "react", router: null, srcDir: true }))).toEqual({
+    expect(written(componentFor("react", ctx({ framework: "react", router: null, srcDir: true })))).toEqual({
       path: "src/components/HeroSequence.tsx",
       contents: REACT_TSX.replace("../public/", "../../public/"),
       usage: ["Render it in a component, e.g. src/App.tsx:", '  import HeroSequence from "./components/HeroSequence";', "  <HeroSequence />"],
@@ -68,9 +85,26 @@ describe("componentFor: React", () => {
   });
 
   it("uses the frames folder and component name it is given", () => {
-    const file = componentFor("react", ctx({ framework: "react", router: null, srcDir: true }, { name: "Intro", out: "public/media/intro" }))!;
+    const file = written(componentFor("react", ctx({ framework: "react", router: null, srcDir: true }, { name: "Intro", out: "public/media/intro" })))!;
     expect(file.path).toBe("src/components/Intro.tsx");
     expect(file.contents).toContain('import manifest from "../../public/media/intro/manifest.json";');
     expect(file.contents).toContain("export default function Intro() {");
+  });
+});
+
+describe("componentFor: plain HTML", () => {
+  it("writes a snippet with the CDN lines and the server-rendered poster, for the CLI's minor version", () => {
+    const file = written(componentFor("html", ctx({ framework: "html", hasPackageJson: false }, { out: "sequence", version: "0.3.1" })))!;
+    expect(file.path).toBe("hero-sequence.html");
+    expect(file.contents).toContain('<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@scrollframe/element@0.3/dist/scroll-sequence.css" />');
+    expect(file.contents).toContain('<script src="https://cdn.jsdelivr.net/npm/@scrollframe/element@0.3" defer></script>');
+    expect(file.contents).toContain(
+      '<scroll-sequence src="/sequence/manifest.json" alt="Describe the scene for search engines and screen readers">',
+    );
+    expect(file.contents).toContain('<div data-sf-stage="" style="position:sticky;top:0;height:100svh;overflow:hidden"><picture>');
+    expect(file.contents).toContain('src="/sequence/desktop/poster.webp"');
+    expect(file.usage).toEqual([
+      "Paste the two <head> lines and the <scroll-sequence> block from hero-sequence.html into your page.",
+    ]);
   });
 });

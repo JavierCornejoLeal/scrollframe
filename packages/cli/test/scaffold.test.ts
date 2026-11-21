@@ -1,5 +1,6 @@
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { PassThrough } from "node:stream";
+import { parseManifest } from "@scrollframe/core";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it, vi } from "vitest";
@@ -23,7 +24,15 @@ function project(files: Record<string, string | object>): string {
 /** What generateSequence resolves with, without running ffmpeg. */
 const fakeResult = (options: GenerateOptions, frameCount = options.frames): GenerateResult => ({
   manifestPath: join(options.out, "manifest.json"),
-  manifest: { frameCount } as GenerateResult["manifest"],
+  manifest: parseManifest({
+    version: 1,
+    frameCount,
+    baseUrl: options.baseUrl,
+    pattern: "frame-{index}.webp",
+    padding: 4,
+    poster: "poster.webp",
+    sets: [{ name: "desktop", maxViewportWidth: null, width: 960, height: 540, dir: "desktop" }],
+  }),
   bytesBySet: {},
 });
 
@@ -332,5 +341,18 @@ describe("runCli scaffold: fixing a stylesheet that breaks the pinned sequence",
     expect(await run("hero.mp4")).toBe(0);
     expect(readFileSync(join(root, "app/globals.css"), "utf8")).toBe("/* edited meanwhile */\n" + HIDDEN);
     expect(out.stderr).toContain("app/globals.css changed after the plan was made; it was not modified. Change overflow-x: hidden to clip there yourself.");
+  });
+});
+
+describe("runCli scaffold: plain HTML", () => {
+  it("writes the snippet with the poster of the frames it just generated", async () => {
+    const root = project({ "index.html": "<!doctype html>" });
+    const { out, run } = harness(root);
+    expect(await run("hero.mp4")).toBe(0);
+    expect(out.stdout).toContain(" 2. Create hero-sequence.html");
+    const snippet = readFileSync(join(root, "hero-sequence.html"), "utf8");
+    expect(snippet).toContain('<scroll-sequence src="/sequence/manifest.json"');
+    expect(snippet).toContain('src="/sequence/desktop/poster.webp"');
+    expect(out.stdout).toContain("Paste the two <head> lines and the <scroll-sequence> block from hero-sequence.html into your page.");
   });
 });
