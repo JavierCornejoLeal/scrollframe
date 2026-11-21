@@ -19,4 +19,4 @@ export {
   type PosterSource,
 } from "./poster.js";
 export { clamp, coarseToFineOrder, frameIndexFromProgress, nearestLoaded, progressFromRect } from "./math.js";
-export { PROGRESS_CSS_VAR, ScrollSequence, type ScrollSequenceOptions } from "./sequence.js";
+export { PROGRESS_CSS_VAR, ScrollSequence, findStickyBlocker, type ScrollSequenceOptions } from "./sequence.js";

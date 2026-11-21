@@ -6,6 +6,21 @@ Turn a video into a scroll-driven storytelling section with one command, without
 npx @scrollframe/cli hero.mp4
 ```
 
+It turns the video into optimized frames, detects your project (Next.js, React, Angular, Vue or plain HTML), shows what it will do and, after one confirmation, installs the right package and writes a ready-to-use component:
+
+```
+Project: Next.js (App Router) · TypeScript · pnpm
+
+Plan:
+ 1. Generate 120 frames in public/sequence/
+ 2. Install @scrollframe/react  (pnpm add @scrollframe/react)
+ 3. Create components/HeroSequence.tsx
+
+Continue? (Y/n)
+```
+
+The component it writes for React looks like this:
+
 ```tsx
 import { ScrollSequence } from "@scrollframe/react";
 import manifest from "../public/sequence/manifest.json";
@@ -56,9 +71,29 @@ Anything you pass as `children` is rendered on top of the sequence. The current 
 
 Use `onProgress={(progress, frame) => ...}` when you need it in JavaScript.
 
-## CLI options
+## What the CLI does in your project
 
-Run it once with `npx @scrollframe/cli <video>`, or install it (`npm i -D @scrollframe/cli`) and call the `scrollframe` command from your scripts.
+Run it once with `npx @scrollframe/cli <video>` (or `pnpm dlx`), or install it (`npm i -D @scrollframe/cli`) and call the `scrollframe` command from your scripts. Nothing happens at install time: everything happens when the command runs, after you confirm.
+
+| Project | Package installed | File written |
+| --- | --- | --- |
+| Next.js (App or Pages Router) | `@scrollframe/react` | `components/HeroSequence.tsx` (or `src/components/`, `.jsx` without TypeScript) |
+| React | `@scrollframe/react` | `src/components/HeroSequence.tsx` |
+| Angular | `@scrollframe/element` | `src/app/hero-sequence/hero-sequence.ts`, and the stylesheet added to `angular.json` |
+| Vue | `@scrollframe/element` | `src/components/HeroSequence.vue`; the `vite.config` line to add is printed |
+| Plain HTML (PHP, Django, Rails, static) | none (CDN) | `hero-sequence.html`: CDN lines and the block with the poster already rendered |
+
+The component is named after the video (`hero.mp4` → `HeroSequence`), and the CLI prints the exact import for your main page. Svelte, Astro, Nuxt and Remix are recognised but not supported yet: only the frames are generated, or use `--framework html`.
+
+It is careful with your project:
+
+- It shows the whole plan and asks once. `n`, Ctrl+C or Ctrl+D change nothing. `--yes` skips the question.
+- It never overwrites an existing file, and only edits a file if it still matches what the plan showed.
+- The package is installed with your package manager (pnpm, npm, yarn or bun, from the lockfile); `--no-install` skips it.
+- Without a terminal and without `--yes` (CI, scripts), it only generates the frames, as before, and prints a hint.
+- **`overflow-x: hidden` on `html`/`body`** (the Next.js 16 starter stylesheet has it) stops the sequence from staying pinned while scrolling. The plan offers to change it to `overflow-x: clip`, which hides the overflow the same way. In the browser, the engine also warns in the console when an ancestor's overflow breaks pinning.
+
+## CLI options
 
 ```
 scrollframe <video> [options]
@@ -70,7 +105,11 @@ scrollframe <video> [options]
   -w, --widths <m,t,d>    Mobile, tablet and desktop widths (default: 720,1280,1920)
       --lossless          Lossless WebP (much heavier, hurts LCP; not recommended)
       --ffmpeg <path>     ffmpeg binary (default: FFMPEG_PATH, bundled ffmpeg-static, then PATH)
-      --force             Overwrite an existing sequence in the output folder
+      --force             Overwrite a non-empty output folder
+  -y, --yes               Do not ask; set up the project (also without a terminal)
+      --framework <name>  Skip detection: next, react, angular, vue or html
+      --name <Name>       Component name (default: from the video, e.g. HeroSequence)
+      --no-install        Do not install the scrollframe package
 ```
 
 Breakpoints: mobile ≤ 767px, tablet ≤ 1279px, desktop above. Frames are never upscaled beyond the source video.

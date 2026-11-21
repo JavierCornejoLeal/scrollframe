@@ -30,6 +30,33 @@ function prefersStaticMedia(): boolean {
   return reducedMotion || connection?.saveData === true;
 }
 
+const SCROLL_CONTAINER = new Set(["hidden", "auto", "scroll"]);
+
+const describeElement = (el: Element) =>
+  el.localName + (el.id ? `#${el.id}` : "") + (el.classList.length ? `.${[...el.classList].join(".")}` : "");
+
+/**
+ * The first ancestor whose overflow makes it a scroll container, which stops `position: sticky`
+ * from pinning the sequence to the viewport. `body` only counts when `html` has an overflow too:
+ * otherwise the browser applies body's overflow to the viewport and sticky still works.
+ */
+export function findStickyBlocker(container: Element): { element: Element; property: string; value: string } | null {
+  const root = container.ownerDocument.documentElement;
+  const rootStyle = getComputedStyle(root);
+  // An unset value reads as "" in some environments (jsdom) and "visible" in browsers.
+  const clips = (value: string) => value !== "" && value !== "visible";
+  const rootClips = clips(rootStyle.overflowX) || clips(rootStyle.overflowY);
+  for (let el = container.parentElement; el && el !== root; el = el.parentElement) {
+    if (el === container.ownerDocument.body && !rootClips) continue;
+    const style = getComputedStyle(el);
+    const axes = (["overflow-x", "overflow-y"] as const).map((property) => ({ property, value: style.getPropertyValue(property) }));
+    // A hidden axis makes the other compute to auto, so report the hidden one: that is what was written.
+    const blocking = axes.find((axis) => axis.value === "hidden") ?? axes.find((axis) => SCROLL_CONTAINER.has(axis.value));
+    if (blocking) return { element: el, ...blocking };
+  }
+  return null;
+}
+
 /**
  * Scroll-scrubbed image sequence painted on a canvas.
  * Nothing is downloaded until the container gets close to the viewport, and only the
@@ -64,6 +91,18 @@ export class ScrollSequence {
   start(): this {
     if (this.started || this.destroyed || prefersStaticMedia()) return this;
     this.started = true;
+    const blocker = findStickyBlocker(this.options.container);
+    if (blocker) {
+      const { element, property, value } = blocker;
+      const name = describeElement(element);
+      console.warn(
+        value === "hidden"
+          ? `scrollframe: ${name} has "${property}: hidden", so the sequence cannot stay pinned while scrolling. ` +
+              `Use "${property}: clip" instead: it hides the overflow the same way without creating a scroll container.`
+          : `scrollframe: ${name} scrolls its own content ("${property}: ${value}"), but the sequence follows the page scroll. ` +
+              "Place the sequence outside that scrolling container.",
+      );
+    }
     this.observer = new IntersectionObserver(
       (entries) => {
         if (entries.some((entry) => entry.isIntersecting)) {
