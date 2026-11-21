@@ -64,12 +64,25 @@ export class ScrollSequenceElement extends Base {
   #manifest: unknown = undefined;
   #engine: Engine | null = null;
   #stage: HTMLElement | null = null;
-  /** Markup of the poster on screen; unchanged markup is never re-rendered (no re-download, no flash). */
-  #posterMarkup: string | null = null;
+  /** False until the first mount: a server-rendered poster found then is kept as it is. */
+  #posterSettled = false;
   #abort: AbortController | null = null;
   /** Bumped on every (re)load and disconnect, so stale async loads are dropped. */
   #generation = 0;
   #refreshQueued = false;
+  /** True between connectedCallback and disconnectedCallback. */
+  #connected = false;
+
+  constructor() {
+    super();
+    // `el.manifest = ...` before the class was defined (deferred script, lazy import) created a
+    // plain own property that would shadow the accessor; move it into the private field.
+    if (Object.prototype.hasOwnProperty.call(this, "manifest")) {
+      const value = (this as { manifest?: unknown }).manifest;
+      delete (this as { manifest?: unknown }).manifest;
+      this.#manifest = value;
+    }
+  }
 
   /** The manifest object (e.g. an imported `manifest.json`). Takes precedence over `src`. */
   get manifest(): unknown {
@@ -82,12 +95,14 @@ export class ScrollSequenceElement extends Base {
   }
 
   connectedCallback(): void {
+    this.#connected = true;
     const root = this.getRootNode();
     ensureStyles(root instanceof ShadowRoot ? root : document, this.localName);
     this.#load();
   }
 
   disconnectedCallback(): void {
+    this.#connected = false;
     this.#teardown();
   }
 
@@ -95,9 +110,13 @@ export class ScrollSequenceElement extends Base {
     if (oldValue !== newValue) this.#queueRefresh();
   }
 
-  /** Coalesces several attribute/property changes made in the same task into one reload. */
+  /**
+   * Coalesces several attribute/property changes made in the same task into one reload.
+   * Ignored before connectedCallback: when an element already in the page is upgraded, the browser
+   * reports every existing attribute as a change first, and connectedCallback loads right after.
+   */
   #queueRefresh(): void {
-    if (!this.isConnected || this.#refreshQueued) return;
+    if (!this.#connected || this.#refreshQueued) return;
     this.#refreshQueued = true;
     queueMicrotask(() => {
       this.#refreshQueued = false;
@@ -140,15 +159,15 @@ export class ScrollSequenceElement extends Base {
       );
   }
 
+  /** Any failure (invalid manifest, engine, DOM) is reported as `sf-error`, never thrown. */
   #mountSafely(read: () => unknown): void {
-    let manifest: SequenceManifest;
     try {
-      manifest = parseManifest(read());
+      this.#mount(parseManifest(read()));
     } catch (error) {
+      this.#engine?.destroy();
+      this.#engine = null;
       this.#fail(error);
-      return;
     }
-    this.#mount(manifest);
   }
 
   #mount(manifest: SequenceManifest): void {
@@ -188,16 +207,18 @@ export class ScrollSequenceElement extends Base {
     return this.#stage;
   }
 
+  /**
+   * Keeps the poster on screen when it already matches (no re-download, no flash). On the first
+   * mount a server-rendered poster is kept as is: it is already painted and may be the LCP image.
+   * Later refreshes replace it if it differs from what the attributes describe.
+   */
   #renderPoster(stage: HTMLElement, markup: string): void {
     const current = stage.querySelector(":scope > picture");
-    // A server-rendered poster is already painted (it may be the LCP image): keep it.
-    if (current && (this.#posterMarkup === null || this.#posterMarkup === markup)) {
-      this.#posterMarkup = markup;
-      return;
-    }
+    const keep = current !== null && (!this.#posterSettled || current.outerHTML === markup);
+    this.#posterSettled = true;
+    if (keep) return;
     current?.remove();
     stage.insertAdjacentHTML("afterbegin", markup);
-    this.#posterMarkup = markup;
   }
 
   #ensureCanvas(stage: HTMLElement): HTMLCanvasElement {

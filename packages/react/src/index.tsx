@@ -70,7 +70,7 @@ export function ScrollSequence({
         <picture>
           {poster.sources.map((source) => (
             <source
-              key={source.media}
+              key={source.srcset}
               media={source.media}
               srcSet={source.srcset}
               width={source.width}

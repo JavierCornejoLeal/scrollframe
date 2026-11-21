@@ -6,12 +6,18 @@ import { parseManifest, renderPosterMarkup, renderStageMarkup } from "@scrollfra
 const { engines, FakeEngine } = vi.hoisted(() => {
   const engines: InstanceType<typeof FakeEngine>[] = [];
   class FakeEngine {
+    /** Makes the next start() throw, like a real engine failing on a broken canvas. */
+    static failNextStart = false;
     started = 0;
     destroyed = 0;
     constructor(readonly options: import("@scrollframe/core").ScrollSequenceOptions) {
       engines.push(this);
     }
     start() {
+      if (FakeEngine.failNextStart) {
+        FakeEngine.failNextStart = false;
+        throw new Error("engine failed to start");
+      }
       this.started++;
       return this;
     }
@@ -270,5 +276,69 @@ describe("<scroll-sequence> server-rendered poster", () => {
     await vi.waitFor(() => expect(engines).toHaveLength(2));
     expect(el.querySelectorAll("img")).toHaveLength(1);
     expect(el.querySelector("img")!.getAttribute("src")).toBe("/other/desktop/poster.webp");
+  });
+});
+
+describe("<scroll-sequence> upgrade (script loaded after the HTML, e.g. defer or a CDN)", () => {
+  let tagCount = 0;
+  /** A tag name that is not defined yet, so defining it upgrades elements already in the page. */
+  const lateTag = () => `late-sequence-${++tagCount}`;
+
+  it("requests the manifest once when an element already in the page is upgraded", async () => {
+    const fetchMock = vi.fn<Fetch>(async () => jsonResponse(manifest));
+    vi.stubGlobal("fetch", fetchMock);
+    const tag = lateTag();
+    document.body.innerHTML = `<${tag} src="/sequence/manifest.json" alt="Scene" scroll-length="400vh"></${tag}>`;
+
+    defineScrollSequence(tag);
+    await vi.waitFor(() => expect(engines).toHaveLength(1));
+    await new Promise((r) => setTimeout(r, 0));
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(engines[0]!.destroyed).toBe(0);
+  });
+
+  it("uses a manifest assigned before the element was upgraded", () => {
+    const fetchMock = vi.fn<Fetch>();
+    vi.stubGlobal("fetch", fetchMock);
+    const tag = lateTag();
+    const el = document.createElement(tag) as InstanceType<typeof ScrollSequenceElement>;
+    el.setAttribute("alt", "Scene");
+    el.manifest = manifest; // plain property: the class is not defined yet
+    document.body.append(el);
+
+    defineScrollSequence(tag);
+    expect(engines).toHaveLength(1);
+    expect(engines[0]!.options.manifest.frameCount).toBe(10);
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(el.manifest).toBe(manifest);
+  });
+});
+
+describe("<scroll-sequence> failures after the manifest is valid", () => {
+  it("reports an engine failure as sf-error instead of throwing", () => {
+    const errors: string[] = [];
+    document.body.addEventListener("sf-error", (e) => errors.push((e as CustomEvent).detail.error.message));
+    FakeEngine.failNextStart = true;
+    const el = create({ alt: "x" });
+    el.manifest = manifest;
+
+    expect(() => document.body.append(el)).not.toThrow();
+    expect(errors).toEqual(["engine failed to start"]);
+  });
+});
+
+describe("<scroll-sequence> poster state", () => {
+  it("replaces an adopted poster that differs from its attributes on the next refresh", async () => {
+    const el = create({ alt: "New alt" });
+    el.innerHTML = renderStageMarkup(parseManifest(manifest), { alt: "Old alt" });
+    const serverImg = el.querySelector("img")!;
+    el.manifest = manifest;
+    document.body.append(el);
+    expect(el.querySelector("img")).toBe(serverImg); // first paint: the server poster is kept
+
+    el.setAttribute("scroll-length", "400vh"); // any refresh
+    await vi.waitFor(() => expect(engines).toHaveLength(2));
+    expect(el.querySelector("img")!.getAttribute("alt")).toBe("New alt");
+    expect(el.querySelectorAll("img")).toHaveLength(1);
   });
 });
