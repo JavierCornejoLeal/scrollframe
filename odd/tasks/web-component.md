@@ -17,6 +17,7 @@ Branch: `feat/web-component` · Baseline: `84955e4` · Delivery: `ask-on-risk`, 
 - [x] T2b (S1, S3) progressive enhancement: reuse a server-rendered poster already inside the element, so `src` does not delay the LCP image — inline
 - [x] T3 (S1) global `<script>` bundle (IIFE, core included) — inline
 - [x] T4 (S1) CI and release wiring: 4 tarballs, changesets `linked`, publish guard, publint/attw — inline
+- [ ] T2c (S1, S3) review fixes: single manifest fetch on upgrade; honour `manifest` assigned before upgrade; any mount failure -> `sf-error`; `#posterMarkup` tracks what is on screen; React `<source>` key stays unique — inline
 - [ ] T5 (S1, S2) browser e2e on a plain HTML page — inline
 - [ ] T6 (S1) README "Any framework / plain HTML" + minor changeset — inline
 
@@ -46,3 +47,5 @@ Branch: `feat/web-component` · Baseline: `84955e4` · Delivery: `ask-on-risk`, 
 - L22: Release simulation in a throwaway clone (temporary minor changeset for element + core): `changeset version` moves all 4 linked packages to 0.2.0; the packed element depends on `@scrollframe/core: ^0.2.0` (no `workspace:`). Nothing published.
 - L23: Owner action before the release: the npm granular token must be allowed to publish the new `@scrollframe/element` (a token limited to the 3 existing packages would fail with E404 on first publish).
 - L24: T4 commit fd06dba assessed high (item 5, CI/release) and reviewed alone (lenses risk + reliability, owner granted): approved, acknowledged (authority burned). Advisory: prepare.mjs tarball matching has no automated test (verified by hand with a missing-package run). Slice T1-T3 (84955e4..730ffd0) assessed medium, under_budget, still pending.
+- L25: Branch review 84955e4..cdccbea (4 lenses, owner granted): approved, acknowledged (authority burned). Non-blocking but real findings: R3 double manifest load on upgrade; R3 `manifest` property assigned before upgrade is shadowed and ignored; R4 Engine/DOM failures after parsing escape without `sf-error`; R2 `#posterMarkup` can disagree with an adopted poster; R3 React `<source>` key changed from set name to media (duplicates if two sets share a width); R2 shared styles duplicated in React; R3 prepare.mjs matching untested.
+- L26: Verified R3 double load in Chromium: both the CDN page and the ESM page request manifest.json twice, one `net::ERR_ABORTED`. Missed by L9/L18 because they did not count manifest requests. Added T2c.
