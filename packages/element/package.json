@@ -1,0 +1,50 @@
+{
+  "name": "@scrollframe/element",
+  "version": "0.1.1",
+  "description": "Framework-agnostic <scroll-sequence> custom element for scroll storytelling: works in Angular, Vue, Svelte, Astro and plain HTML.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/JavierCornejoLeal/scrollframe.git",
+    "directory": "packages/element"
+  },
+  "homepage": "https://github.com/JavierCornejoLeal/scrollframe#readme",
+  "bugs": {
+    "url": "https://github.com/JavierCornejoLeal/scrollframe/issues"
+  },
+  "type": "module",
+  "sideEffects": true,
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "keywords": [
+    "scroll",
+    "scrollytelling",
+    "web-component",
+    "custom-element",
+    "image-sequence"
+  ],
+  "scripts": {
+    "build": "tsup src/index.ts --format esm,cjs --dts --clean",
+    "typecheck": "tsc --noEmit -p .",
+    "prepublishOnly": "node ../../scripts/require-pnpm-publish.mjs"
+  },
+  "dependencies": {
+    "@scrollframe/core": "workspace:^"
+  }
+}

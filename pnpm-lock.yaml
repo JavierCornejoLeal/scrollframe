@@ -41,6 +41,12 @@ importers:
 
   packages/core: {}
 
+  packages/element:
+    dependencies:
+      '@scrollframe/core':
+        specifier: workspace:^
+        version: link:../core
+
   packages/react:
     dependencies:
       '@scrollframe/core':
