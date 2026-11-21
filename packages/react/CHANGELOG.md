@@ -1,5 +1,12 @@
 # @scrollframe/react
 
+## 0.3.0
+
+### Patch Changes
+
+- Updated dependencies [889b2ea]
+  - @scrollframe/core@0.3.0
+
 ## 0.2.0
 
 ### Patch Changes
