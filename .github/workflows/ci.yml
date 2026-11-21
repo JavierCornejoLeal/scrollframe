@@ -65,7 +65,7 @@ jobs:
           # Globs, not versions: the version PR renames every tarball.
           npx -y @arethetypeswrong/cli@0.18.5 scrollframe-core-*.tgz
           npx -y @arethetypeswrong/cli@0.18.5 scrollframe-react-*.tgz
-          npx -y @arethetypeswrong/cli@0.18.5 --profile esm-only scrollframe-[0-9]*.tgz
+          npx -y @arethetypeswrong/cli@0.18.5 --profile esm-only scrollframe-cli-*.tgz
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: tarballs

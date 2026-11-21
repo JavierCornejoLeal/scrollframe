@@ -1,5 +1,5 @@
 {
-  "name": "scrollframe",
+  "name": "@scrollframe/cli",
   "version": "0.1.0",
   "description": "Turn a video into an optimized, SEO-friendly scroll storytelling sequence with one command.",
   "license": "MIT",
@@ -40,7 +40,8 @@
   ],
   "scripts": {
     "build": "tsup src/index.ts src/cli.ts --format esm --dts --clean --target node20",
-    "typecheck": "tsc --noEmit -p ."
+    "typecheck": "tsc --noEmit -p .",
+    "prepublishOnly": "node ../../scripts/require-pnpm-publish.mjs"
   },
   "dependencies": {
     "@scrollframe/core": "workspace:^",
