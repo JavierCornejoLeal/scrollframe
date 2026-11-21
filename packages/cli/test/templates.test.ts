@@ -189,3 +189,14 @@ import "@scrollframe/element/style.css";
     rmSync(root, { recursive: true, force: true });
   });
 });
+
+describe("componentFor: untrusted video names", () => {
+  it("cannot close the comment it is written in", () => {
+    for (const framework of ["next", "angular", "vue", "html"] as const) {
+      const file = written(componentFor(framework, ctx({ framework, router: framework === "next" ? "app" : null, srcDir: true, root: "/nonexistent" }, { video: "evil --> <script>\n*.mp4" })))!;
+      // A file name cannot contain "/", so "*/" cannot appear; "-->", "<", "*" and line breaks can.
+      expect(file.contents).toContain("evil --_ _script___.mp4");
+      expect(file.contents).not.toContain("-->  <");
+    }
+  });
+});

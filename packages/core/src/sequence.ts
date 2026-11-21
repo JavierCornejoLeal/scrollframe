@@ -94,9 +94,13 @@ export class ScrollSequence {
     const blocker = findStickyBlocker(this.options.container);
     if (blocker) {
       const { element, property, value } = blocker;
+      const name = describeElement(element);
       console.warn(
-        `scrollframe: ${describeElement(element)} has "${property}: ${value}", so the sequence cannot stay pinned while scrolling. ` +
-          `Use "${property}: clip" instead: it hides the overflow the same way without creating a scroll container.`,
+        value === "hidden"
+          ? `scrollframe: ${name} has "${property}: hidden", so the sequence cannot stay pinned while scrolling. ` +
+              `Use "${property}: clip" instead: it hides the overflow the same way without creating a scroll container.`
+          : `scrollframe: ${name} scrolls its own content ("${property}: ${value}"), but the sequence follows the page scroll. ` +
+              "Place the sequence outside that scrolling container.",
       );
     }
     this.observer = new IntersectionObserver(

@@ -369,3 +369,22 @@ describe("sticky blockers", () => {
     expect(warn).not.toHaveBeenCalled();
   });
 });
+
+describe("sticky blockers: scrolling containers", () => {
+  it("does not recommend clip for a container that is meant to scroll", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const shell = document.createElement("div");
+    shell.className = "shell";
+    shell.style.overflowY = "auto";
+    document.body.append(shell);
+    const container = document.createElement("section");
+    container.getBoundingClientRect = () => ({ top: 0, height: 3000 }) as DOMRect;
+    shell.append(container);
+    live.push(new ScrollSequence({ container, canvas: document.createElement("canvas"), manifest }).start());
+    expect(warn.mock.calls[0]![0]).toBe(
+      'scrollframe: div.shell scrolls its own content ("overflow-y: auto"), but the sequence follows the page scroll. Place the sequence outside that scrolling container.',
+    );
+    warn.mockRestore();
+    shell.remove();
+  });
+});

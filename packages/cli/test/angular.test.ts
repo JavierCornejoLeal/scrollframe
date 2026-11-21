@@ -65,3 +65,23 @@ describe("planAngularStyles", () => {
     expect(planAngularStyles(project(null)).note).toBe('Could not read angular.json: add "@scrollframe/element/style.css" to "styles" yourself.');
   });
 });
+
+describe("planAngularStyles: formatting", () => {
+  it("keeps CRLF line endings", () => {
+    const before = angularJson(["src/styles.css"]).replace(/\n/g, "\r\n");
+    expect(planAngularStyles(project(before)).edit!.after).toBe(angularJson(["src/styles.css", "@scrollframe/element/style.css"]).replace(/\n/g, "\r\n"));
+  });
+
+  it("keeps tab indentation", () => {
+    const tabs = (styles: string[]) => angularJson(styles).replace(/^( {2})+/gm, (m) => "\t".repeat(m.length / 2));
+    expect(planAngularStyles(project(tabs(["src/styles.css"]))).edit!.after).toBe(tabs(["src/styles.css", "@scrollframe/element/style.css"]));
+  });
+
+  it("does not rewrite an angular.json it could not reproduce exactly, and says what to add", () => {
+    const compact = JSON.stringify(JSON.parse(angularJson(["src/styles.css"])));
+    expect(planAngularStyles(project(compact))).toEqual({
+      edit: null,
+      note: 'angular.json is not formatted like `ng new` writes it, so it is left as is: add "@scrollframe/element/style.css" to "styles" yourself.',
+    });
+  });
+});

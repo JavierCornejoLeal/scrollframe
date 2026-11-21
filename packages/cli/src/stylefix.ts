@@ -49,7 +49,12 @@ export function fixStickyOverflow(css: string): string | null {
 export function planOverflowFixes(project: ProjectInfo, framework: Framework): FileEdit[] {
   const path = globalStylesheet(project, framework);
   if (!path || !existsSync(join(project.root, path))) return [];
-  const before = readFileSync(join(project.root, path), "utf8");
+  let before: string;
+  try {
+    before = readFileSync(join(project.root, path), "utf8");
+  } catch {
+    return []; // unreadable (e.g. a folder at that path): plan without this step
+  }
   const after = fixStickyOverflow(before);
   if (after === null) return [];
   return [

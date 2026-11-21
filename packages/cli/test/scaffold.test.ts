@@ -356,3 +356,68 @@ describe("runCli scaffold: plain HTML", () => {
     expect(out.stdout).toContain("Paste the two <head> lines and the <scroll-sequence> block from hero-sequence.html into your page.");
   });
 });
+
+describe("runCli scaffold: files that change or fail between the plan and the end", () => {
+  const HIDDEN = "html,\nbody {\n  overflow-x: hidden;\n}\n";
+
+  it("notes, instead of crashing, a planned stylesheet that was deleted before it was applied", async () => {
+    const root = nextApp();
+    writeFileSync(join(root, "app/globals.css"), HIDDEN);
+    const { out, run } = harness(root, {
+      confirm: async () => {
+        rmSync(join(root, "app/globals.css"));
+        return true;
+      },
+    });
+    expect(await run("hero.mp4")).toBe(0);
+    expect(out.stderr).toContain("app/globals.css changed after the plan was made; it was not modified. Change overflow-x: hidden to clip there yourself.");
+  });
+
+  it("plans without the stylesheet step when the stylesheet cannot be read", async () => {
+    const root = nextApp();
+    mkdirSync(join(root, "app/globals.css")); // a folder where a file is expected
+    const { out, run } = harness(root);
+    expect(await run("hero.mp4")).toBe(0);
+    expect(out.stdout).not.toContain("Change overflow-x");
+  });
+
+  it("still applies the stylesheet fix and reports it when the component cannot be created", async () => {
+    const root = nextApp();
+    writeFileSync(join(root, "app/globals.css"), HIDDEN);
+    const { out, run } = harness(root, {
+      confirm: async () => {
+        mkdirSync(join(root, "components"));
+        writeFileSync(join(root, "components/HeroSequence.jsx"), "// appeared meanwhile");
+        return true;
+      },
+    });
+    expect(await run("hero.mp4")).toBe(1);
+    expect(out.stderr).toMatch(/Could not create components\/HeroSequence\.jsx: /);
+    expect(readFileSync(join(root, "app/globals.css"), "utf8")).toContain("overflow-x: clip");
+    expect(readFileSync(join(root, "components/HeroSequence.jsx"), "utf8")).toBe("// appeared meanwhile");
+  });
+});
+
+describe("runCli scaffold: Angular and Vue end to end", () => {
+  it("Angular: installs the element, writes the component and adds the stylesheet to angular.json", async () => {
+    const angularJson = JSON.stringify({ projects: { app: { architect: { build: { options: { styles: ["src/styles.css"] } } } } } }, null, 2) + "\n";
+    const root = project({ "package.json": { dependencies: { "@angular/core": "22" } }, "angular.json": angularJson, "src/": "", "public/": "" });
+    const { out, calls, run } = harness(root);
+    expect(await run("hero.mp4")).toBe(0);
+    expect(calls.commands).toEqual(["npm install @scrollframe/element"]);
+    expect(out.stdout).toContain(" 4. Add @scrollframe/element/style.css to the styles in angular.json");
+    expect(readFileSync(join(root, "src/app/hero-sequence/hero-sequence.ts"), "utf8")).toContain('selector: "app-hero-sequence"');
+    expect(JSON.parse(readFileSync(join(root, "angular.json"), "utf8")).projects.app.architect.build.options.styles).toEqual([
+      "src/styles.css",
+      "@scrollframe/element/style.css",
+    ]);
+  });
+
+  it("Vue: writes the component and prints the vite.config line", async () => {
+    const root = project({ "package.json": { dependencies: { vue: "3" } }, "src/": "", "public/": "" });
+    const { out, run } = harness(root);
+    expect(await run("hero.mp4")).toBe(0);
+    expect(readFileSync(join(root, "src/components/HeroSequence.vue"), "utf8")).toContain("<scroll-sequence src=");
+    expect(out.stdout).toContain("Tell Vue that <scroll-sequence> is a custom element, in vite.config:");
+  });
+});

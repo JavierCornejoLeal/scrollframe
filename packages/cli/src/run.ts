@@ -125,8 +125,7 @@ export async function runCli(argv: string[], io: CliIO, overrides: Partial<RunDe
   try {
     plan = planScaffold(deps.detect(deps.cwd), options, flags);
   } catch (error) {
-    if (!(error instanceof UsageError)) throw error;
-    plan = framesOnlyPlan(options, error.message);
+    plan = framesOnlyPlan(options, (error as Error).message);
   }
   io.stdout.write(formatPlan(plan));
   if (!flags.yes && !(await deps.confirm("Continue? (Y/n) "))) {
@@ -149,6 +148,7 @@ export async function runCli(argv: string[], io: CliIO, overrides: Partial<RunDe
     }
   }
 
+  let exitCode = 0;
   if (plan.component) {
     const { path, render, usage } = plan.component;
     const target = join(deps.cwd, path);
@@ -156,25 +156,35 @@ export async function runCli(argv: string[], io: CliIO, overrides: Partial<RunDe
       mkdirSync(dirname(target), { recursive: true });
       // "wx" fails if the file appeared since the plan was made: never overwrite the user's code.
       writeFileSync(target, render(result.manifest), { flag: "wx" });
+      io.stdout.write(`Created ${path}\n\n${usage.join("\n")}\n`);
     } catch (error) {
+      // The remaining confirmed steps still run; the exit code reports the failure.
       io.stderr.write(`Could not create ${path}: ${(error as Error).message}\n`);
-      return 1;
+      exitCode = 1;
     }
-    io.stdout.write(`Created ${path}\n\n${usage.join("\n")}\n`);
   } else if (plan.framework === "next" || plan.framework === "react") {
     io.stdout.write(reactSnippet(result.manifestPath));
   }
   for (const edit of plan.edits) {
     const target = join(deps.cwd, edit.path);
+    let current: string | null;
+    try {
+      current = readFileSync(target, "utf8");
+    } catch {
+      current = null; // deleted or unreadable since the plan
+    }
     // Only apply the change to the exact file content the user saw in the plan.
-    if (readFileSync(target, "utf8") !== edit.before) {
-      io.stderr.write(
-        `${edit.path} changed after the plan was made; it was not modified. ${edit.manual}\n`,
-      );
+    if (current !== edit.before) {
+      io.stderr.write(`${edit.path} changed after the plan was made; it was not modified. ${edit.manual}\n`);
       continue;
     }
-    writeFileSync(target, edit.after);
-    io.stdout.write(`Updated ${edit.path}\n`);
+    try {
+      writeFileSync(target, edit.after);
+      io.stdout.write(`Updated ${edit.path}\n`);
+    } catch (error) {
+      io.stderr.write(`Could not update ${edit.path}: ${(error as Error).message}. ${edit.manual}\n`);
+      exitCode = 1;
+    }
   }
-  return 0;
+  return exitCode;
 }
