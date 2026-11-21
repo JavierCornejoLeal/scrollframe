@@ -59,8 +59,9 @@ function defaultDeps(io: CliIO): RunDeps {
   };
 }
 
+// Import specifiers always use "/", also on Windows where the manifest path uses "\\".
 const reactSnippet = (manifestPath: string) =>
-  `import manifest from "./${manifestPath}";\n<ScrollSequence manifest={manifest} alt="Describe the scene" />\n`;
+  `import manifest from "./${manifestPath.replace(/\\/g, "/")}";\n<ScrollSequence manifest={manifest} alt="Describe the scene" />\n`;
 
 type GenerateOutcome = { ok: true; manifestPath: string; manifest: SequenceManifest } | { ok: false; exitCode: number };
 

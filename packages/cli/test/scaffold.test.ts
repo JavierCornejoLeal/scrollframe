@@ -430,3 +430,14 @@ describe("runCli scaffold: explicit flags when the project cannot be read", () =
     expect(calls.generate).toEqual([]);
   });
 });
+
+describe("runCli: the printed import on Windows", () => {
+  it("uses forward slashes even when the manifest path has backslashes", async () => {
+    const { out, run } = harness(nextApp(), {
+      interactive: false,
+      generate: async (options) => ({ ...fakeResult(options), manifestPath: "public\\sequence\\manifest.json" }),
+    });
+    expect(await run("hero.mp4")).toBe(0);
+    expect(out.stdout).toContain('import manifest from "./public/sequence/manifest.json";');
+  });
+});
