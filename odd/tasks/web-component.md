@@ -16,7 +16,7 @@ Branch: `feat/web-component` · Baseline: `84955e4` · Delivery: `ask-on-risk`, 
 - [x] T2 (S1, S2) `@scrollframe/element` package: lifecycle, `src` / `.manifest`, `base-url`, events `sf-progress` / `sf-ready`, idempotent SSR-safe define — inline
 - [x] T2b (S1, S3) progressive enhancement: reuse a server-rendered poster already inside the element, so `src` does not delay the LCP image — inline
 - [x] T3 (S1) global `<script>` bundle (IIFE, core included) — inline
-- [ ] T4 (S1) CI and release wiring: 4 tarballs, changesets `linked`, publish guard, publint/attw — inline
+- [x] T4 (S1) CI and release wiring: 4 tarballs, changesets `linked`, publish guard, publint/attw — inline
 - [ ] T5 (S1, S2) browser e2e on a plain HTML page — inline
 - [ ] T6 (S1) README "Any framework / plain HTML" + minor changeset — inline
 
@@ -41,3 +41,7 @@ Branch: `feat/web-component` · Baseline: `84955e4` · Delivery: `ask-on-risk`, 
 - L17: publint clean (suggestion only: `engines.node`, same as core). attw: main entry green in node10/node16 CJS/node16 ESM/bundler; `./style.css` must be excluded (`attw <tgz> --exclude-entrypoints ./style.css`, tarball first: the flag is variadic). For T4.
 - L18: T3 browser check, Chromium/Firefox/WebKit, plain HTML with only `<link>` + `<script defer>` (script delayed 2 s): before the script runs the poster is loaded in both pages; without the static CSS the overlay sits below the poster (top 752), with it the overlay is on the poster (top 32), closing the L14 gap. After the script: `window.ScrollFrame` defined, frame 30/60 at 50% scroll, no errors. A first Firefox failure was my test server crashing on `/favicon.ico` (writeHead before readFile); fixed, not a product bug.
 - L19: For T4: `e2e/scripts/prepare.mjs` expects exactly 3 tarballs; `pnpm -r pack` now produces 4, so CI e2e will fail until T4.
+- L20: T4 RED: `prepare.mjs` with the 4 packed tarballs failed: "Expected 3 tarballs ..., found 4." GREEN: it now derives the publishable packages from `packages/*/package.json` (non-private), checks each has `dist`, and requires exactly one tarball per package, naming any missing one ("missing: @scrollframe/element"). CI attw adds `scrollframe-element-*.tgz --exclude-entrypoints ./style.css`; changesets `linked` includes `@scrollframe/element`.
+- L21: T4 local CI replay on the 4 tarballs: ci.yml parses (Ruby YAML); publint --strict 4/4 exit 0; the 4 attw lines as written in ci.yml exit 0; prepare.mjs ok (element installed); CLI e2e 9/9; npm-12 blocked-scripts e2e 5/5.
+- L22: Release simulation in a throwaway clone (temporary minor changeset for element + core): `changeset version` moves all 4 linked packages to 0.2.0; the packed element depends on `@scrollframe/core: ^0.2.0` (no `workspace:`). Nothing published.
+- L23: Owner action before the release: the npm granular token must be allowed to publish the new `@scrollframe/element` (a token limited to the 3 existing packages would fail with E404 on first publish).

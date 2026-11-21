@@ -66,6 +66,8 @@ jobs:
           npx -y @arethetypeswrong/cli@0.18.5 scrollframe-core-*.tgz
           npx -y @arethetypeswrong/cli@0.18.5 scrollframe-react-*.tgz
           npx -y @arethetypeswrong/cli@0.18.5 --profile esm-only scrollframe-cli-*.tgz
+          # style.css is a stylesheet, not a module. The tarball goes first: the flag is variadic.
+          npx -y @arethetypeswrong/cli@0.18.5 scrollframe-element-*.tgz --exclude-entrypoints ./style.css
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: tarballs

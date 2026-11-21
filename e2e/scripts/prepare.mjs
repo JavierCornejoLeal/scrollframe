@@ -9,10 +9,10 @@
 // --work      where the consumer project is created (default: <os tmp>/scrollframe-e2e)
 // --run       also run every e2e suite locally (CLI, build, Playwright on Chromium)
 import { execSync } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, readdirSync, rmSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 
@@ -38,17 +38,35 @@ function sh(cmd, args, cwd) {
 rmSync(work, { recursive: true, force: true });
 mkdirSync(work, { recursive: true });
 
+/** Every publishable workspace package, so a new package is installed and tested without edits here. */
+const packages = readdirSync(join(root, "packages"))
+  .filter((dir) => existsSync(join(root, "packages", dir, "package.json")))
+  .map((dir) => ({ dir, manifest: JSON.parse(readFileSync(join(root, "packages", dir, "package.json"), "utf8")) }))
+  .filter(({ manifest }) => !manifest.private);
+
 let tarballs = values.tarballs ? resolve(values.tarballs) : join(work, ".tarballs");
 if (!values.tarballs) {
-  for (const pkg of ["core", "react", "cli"]) {
-    if (!existsSync(join(root, "packages", pkg, "dist"))) {
-      throw new Error(`packages/${pkg}/dist is missing. Run \`pnpm build\` first.`);
+  for (const { dir } of packages) {
+    if (!existsSync(join(root, "packages", dir, "dist"))) {
+      throw new Error(`packages/${dir}/dist is missing. Run \`pnpm build\` first.`);
     }
   }
   sh("pnpm", ["-r", "pack", "--pack-destination", tarballs], root);
 }
 const tgz = readdirSync(tarballs).filter((f) => f.endsWith(".tgz")).map((f) => join(tarballs, f));
-if (tgz.length !== 3) throw new Error(`Expected 3 tarballs in ${tarballs}, found ${tgz.length}.`);
+/** npm pack names `@scope/name` as `scope-name-<version>.tgz`; the digit check keeps `cli` from matching `cli-extra`. */
+const isTarballOf = (name, file) => {
+  const prefix = `${name.replace(/^@/, "").replace("/", "-")}-`;
+  return file.startsWith(prefix) && /^\d/.test(file.slice(prefix.length));
+};
+const files = tgz.map((path) => basename(path));
+const missing = packages.map(({ manifest }) => manifest.name).filter((name) => !files.some((file) => isTarballOf(name, file)));
+if (missing.length > 0 || tgz.length !== packages.length) {
+  throw new Error(
+    `Expected one tarball per package (${packages.map(({ manifest }) => manifest.name).join(", ")}) in ${tarballs}, ` +
+      `found ${tgz.length}${missing.length ? `; missing: ${missing.join(", ")}` : ""}.`,
+  );
+}
 
 cpSync(fixture, work, {
   recursive: true,
