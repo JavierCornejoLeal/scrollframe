@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { parseManifest, renderPosterMarkup } from "@scrollframe/core";
+import { parseManifest, renderPosterMarkup, renderStageMarkup } from "@scrollframe/core";
 
 // Hoisted with vi.mock, which runs before the static import of @scrollframe/core above.
 const { engines, FakeEngine } = vi.hoisted(() => {
@@ -219,5 +219,56 @@ describe("<scroll-sequence> src", () => {
     await vi.waitFor(() => expect(errors).toHaveLength(2));
     expect(errors[1]).toBe("Unsupported manifest version: 9.");
     expect(engines).toHaveLength(0);
+  });
+});
+
+describe("<scroll-sequence> server-rendered poster", () => {
+  /** What a server template or the CLI snippet outputs inside the element. */
+  function serverRendered(src: string) {
+    const el = create({ alt: "Scene", src });
+    el.innerHTML = renderStageMarkup(parseManifest(manifest), { alt: "Scene" }) + "<h1>Our story</h1>";
+    return el;
+  }
+
+  it("adopts the pre-rendered stage and keeps its poster image while and after the manifest loads", async () => {
+    let resolve!: (r: Response) => void;
+    vi.stubGlobal("fetch", vi.fn<Fetch>(() => new Promise<Response>((r) => (resolve = r))));
+    const el = serverRendered("/sequence/manifest.json");
+    const img = el.querySelector("img")!;
+    document.body.append(el);
+    expect(el.querySelector("img")).toBe(img); // visible before the manifest arrives
+
+    resolve(jsonResponse(manifest));
+    await vi.waitFor(() => expect(engines).toHaveLength(1));
+    expect(el.querySelectorAll(":scope > [data-sf-stage]")).toHaveLength(1);
+    expect(el.querySelector("img")).toBe(img);
+    expect(engines[0]!.options.canvas).toBe(stageOf(el)!.querySelector("canvas"));
+    expect(el.lastElementChild!.tagName).toBe("H1");
+  });
+
+  it("keeps the same poster image when the element is moved in the DOM", () => {
+    const el = create({ alt: "x" });
+    el.manifest = manifest;
+    document.body.append(el);
+    const img = el.querySelector("img")!;
+    const canvas = el.querySelector("canvas")!;
+
+    document.body.prepend(el); // disconnect + connect
+    expect(el.querySelector("img")).toBe(img);
+    expect(el.querySelector("canvas")).toBe(canvas);
+    expect(el.querySelectorAll("canvas")).toHaveLength(1);
+  });
+
+  it("renders a new poster when the manifest source changes", async () => {
+    const other = { ...manifest, baseUrl: "/other" };
+    vi.stubGlobal("fetch", vi.fn<Fetch>(async (url) => jsonResponse(String(url).startsWith("/other") ? other : manifest)));
+    const el = serverRendered("/sequence/manifest.json");
+    document.body.append(el);
+    await vi.waitFor(() => expect(engines).toHaveLength(1));
+
+    el.setAttribute("src", "/other/manifest.json");
+    await vi.waitFor(() => expect(engines).toHaveLength(2));
+    expect(el.querySelectorAll("img")).toHaveLength(1);
+    expect(el.querySelector("img")!.getAttribute("src")).toBe("/other/desktop/poster.webp");
   });
 });

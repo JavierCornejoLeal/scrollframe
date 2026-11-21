@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseManifest, posterImage, renderPosterMarkup } from "../src/index.js";
+import { STAGE_STYLE, parseManifest, posterImage, renderPosterMarkup, renderStageMarkup } from "../src/index.js";
 
 const manifest = parseManifest({
   version: 1,
@@ -84,5 +84,20 @@ describe("renderPosterMarkup", () => {
     const html = renderPosterMarkup(single, { alt: "x" });
     expect(html).not.toContain("<source");
     expect(html).toMatch(/^<picture><img src="\/sequence\/desktop\/poster\.webp"[^>]*><\/picture>$/);
+  });
+});
+
+describe("renderStageMarkup", () => {
+  it("wraps the poster in a sticky, viewport-tall stage that works before any script runs", () => {
+    expect(renderStageMarkup(manifest, { alt: "Scene" })).toBe(
+      `<div data-sf-stage="" style="${STAGE_STYLE}">${renderPosterMarkup(manifest, { alt: "Scene" })}</div>`,
+    );
+    expect(STAGE_STYLE).toBe("position:sticky;top:0;height:100svh;overflow:hidden");
+  });
+
+  it("passes priority and the base URL through to the poster", () => {
+    const html = renderStageMarkup(manifest, { alt: "x", priority: false, baseUrl: "https://cdn.example.com/seq" });
+    expect(html).toContain('loading="lazy"');
+    expect(html).toContain('src="https://cdn.example.com/seq/desktop/poster.webp"');
   });
 });

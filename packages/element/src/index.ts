@@ -1,4 +1,5 @@
 import {
+  STAGE_STYLE,
   ScrollSequence as Engine,
   parseManifest,
   renderPosterMarkup,
@@ -37,7 +38,6 @@ function stylesFor(tag: string): string {
   return (
     `${tag}{display:grid;position:relative;height:var(--sf-scroll-length,300vh)}` +
     `${tag}>*{grid-area:1/1;align-self:start;position:sticky;top:0}` +
-    `${tag}>[data-sf-stage]{height:100svh;overflow:hidden}` +
     `${tag}>[data-sf-stage]>canvas{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;pointer-events:none}`
   );
 }
@@ -63,6 +63,8 @@ export class ScrollSequenceElement extends Base {
   #manifest: unknown = undefined;
   #engine: Engine | null = null;
   #stage: HTMLElement | null = null;
+  /** Markup of the poster on screen; unchanged markup is never re-rendered (no re-download, no flash). */
+  #posterMarkup: string | null = null;
   #abort: AbortController | null = null;
   /** Bumped on every (re)load and disconnect, so stale async loads are dropped. */
   #generation = 0;
@@ -151,15 +153,17 @@ export class ScrollSequenceElement extends Base {
   #mount(manifest: SequenceManifest): void {
     const baseUrl = this.getAttribute("base-url") ?? undefined;
     const stage = this.#ensureStage();
-    stage.innerHTML =
+    this.#renderPoster(
+      stage,
       renderPosterMarkup(manifest, {
         alt: this.getAttribute("alt") ?? "",
         priority: this.getAttribute("priority") !== "false",
         baseUrl,
-      }) + '<canvas aria-hidden="true"></canvas>';
+      }),
+    );
     this.#engine = new Engine({
       container: this,
-      canvas: stage.querySelector("canvas")!,
+      canvas: this.#ensureCanvas(stage),
       manifest,
       baseUrl,
       onProgress: (progress, frame) => this.#emit<ScrollSequenceProgressDetail>("sf-progress", { progress, frame }),
@@ -167,13 +171,42 @@ export class ScrollSequenceElement extends Base {
     }).start();
   }
 
+  /** Adopts a server-rendered stage (`renderStageMarkup`) if there is one, otherwise creates it. */
   #ensureStage(): HTMLElement {
     if (!this.#stage) {
-      this.#stage = document.createElement("div");
-      this.#stage.dataset.sfStage = "";
+      const rendered = this.querySelector<HTMLElement>(":scope > [data-sf-stage]");
+      if (rendered) {
+        this.#stage = rendered;
+      } else {
+        this.#stage = document.createElement("div");
+        this.#stage.dataset.sfStage = "";
+        this.#stage.style.cssText = STAGE_STYLE;
+      }
     }
     if (this.#stage.parentNode !== this) this.prepend(this.#stage);
     return this.#stage;
+  }
+
+  #renderPoster(stage: HTMLElement, markup: string): void {
+    const current = stage.querySelector(":scope > picture");
+    // A server-rendered poster is already painted (it may be the LCP image): keep it.
+    if (current && (this.#posterMarkup === null || this.#posterMarkup === markup)) {
+      this.#posterMarkup = markup;
+      return;
+    }
+    current?.remove();
+    stage.insertAdjacentHTML("afterbegin", markup);
+    this.#posterMarkup = markup;
+  }
+
+  #ensureCanvas(stage: HTMLElement): HTMLCanvasElement {
+    let canvas = stage.querySelector<HTMLCanvasElement>(":scope > canvas");
+    if (!canvas) {
+      canvas = document.createElement("canvas");
+      canvas.setAttribute("aria-hidden", "true");
+      stage.append(canvas);
+    }
+    return canvas;
   }
 
   #applyScrollLength(): void {

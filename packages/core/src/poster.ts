@@ -85,3 +85,15 @@ export function renderPosterMarkup(manifest: SequenceManifest, options: PosterMa
   ])}>`;
   return `<picture>${sourceTags.join("")}${imgTag}</picture>`;
 }
+
+/** Pins the poster to the viewport while the section scrolls; inline so it works before any script runs. */
+export const STAGE_STYLE = "position:sticky;top:0;height:100svh;overflow:hidden";
+
+/**
+ * The stage (sticky frame + poster) as an HTML string. Server templates and generated snippets put it
+ * inside `<scroll-sequence>` so the poster is painted before the element's script loads; the element
+ * adopts it instead of rendering its own.
+ */
+export function renderStageMarkup(manifest: SequenceManifest, options: PosterMarkupOptions): string {
+  return `<div data-sf-stage="" style="${STAGE_STYLE}">${renderPosterMarkup(manifest, options)}</div>`;
+}

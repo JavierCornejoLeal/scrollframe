@@ -10,8 +10,10 @@ export {
 } from "./manifest.js";
 export {
   POSTER_FILL_STYLE,
+  STAGE_STYLE,
   posterImage,
   renderPosterMarkup,
+  renderStageMarkup,
   type PosterImage,
   type PosterMarkupOptions,
   type PosterSource,

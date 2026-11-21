@@ -14,7 +14,7 @@ Branch: `feat/web-component` · Baseline: `84955e4` · Delivery: `ask-on-risk`, 
 
 - [x] T1 (S3) core `posterImage` (data) + `renderPosterMarkup` (HTML string, escaped); React uses `posterImage`; React SSR output pinned by a regression test — inline
 - [x] T2 (S1, S2) `@scrollframe/element` package: lifecycle, `src` / `.manifest`, `base-url`, events `sf-progress` / `sf-ready`, idempotent SSR-safe define — inline
-- [ ] T2b (S1, S3) progressive enhancement: reuse a server-rendered poster already inside the element, so `src` does not delay the LCP image — inline
+- [x] T2b (S1, S3) progressive enhancement: reuse a server-rendered poster already inside the element, so `src` does not delay the LCP image — inline
 - [ ] T3 (S1) global `<script>` bundle (IIFE, core included) — inline
 - [ ] T4 (S1) CI and release wiring: 4 tarballs, changesets `linked`, publish guard, publint/attw — inline
 - [ ] T5 (S1, S2) browser e2e on a plain HTML page — inline
@@ -32,3 +32,7 @@ Branch: `feat/web-component` · Baseline: `84955e4` · Delivery: `ask-on-risk`, 
 - L8: T2 RED: module missing (13 tests). GREEN: 13/13; full suite 99/99; typecheck ok; built dist imports in plain Node and `defineScrollSequence()` returns undefined there. Mutation checks: not dropping a late manifest (1 fail), not destroying on disconnect (2 fail), moving children into an overlay (2 fail); restored 13/13.
 - L9: T2 real-browser smoke (Chromium, plain HTML + import map, real engine, 60 CLI frames): `sf-ready` fired; at 25% and 75% of the scroll the stage is sticky at top 0, the overlay `<h1>` stays a direct child, pinned and hit-testable on top; `--sf-progress` 0.2500/0.7500; frames 15/44 (video counter 0.50 s / 1.46 s); no console errors. Not committed as a test yet (T5 adds the browser e2e).
 - L10: Gap found: with `src`, the poster appears only after the manifest fetch, so it can delay the LCP. Added T2b (reuse a pre-rendered poster).
+- L11: T2b RED: `renderStageMarkup` missing (core), then element tests failed for the right reason (second stage created, poster `<img>` replaced). GREEN: core `STAGE_STYLE` + `renderStageMarkup`; the element adopts a `:scope > [data-sf-stage]` child, keeps a pre-rendered `<picture>` on first mount, reuses its canvas, and re-renders the poster only when its markup changes. Stage layout moved to the inline `STAGE_STYLE` (works before any script). vitest 104/104, typecheck ok.
+- L12: T2b mutation checks: not adopting the server poster (1 fail), ignoring the server stage (2), new canvas each time (1), not removing the old poster on src change (1); restored 16/16.
+- L13: T2b real-browser check (Chromium, manifest delayed 2 s): src-only page has no poster at 700 ms; server-rendered page has the poster loaded and visible (720 px) at 700 ms, the same `<img>` node after `sf-ready`, one poster request, one stage, one canvas, no errors.
+- L14: Known gap (for T3/T6): before the element's script runs, the host has no grid styles, so overlay children render below the stage until upgrade. Needs a static stylesheet or documented host styles.
