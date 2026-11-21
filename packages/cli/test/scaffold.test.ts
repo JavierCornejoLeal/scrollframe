@@ -92,6 +92,17 @@ describe("runCli scaffold: non-interactive keeps today's behaviour", () => {
     expect(out.stdout).toContain("Tip: run it in a terminal, or add --yes, to also set up the component for this Next.js project.");
   });
 
+  it.each([
+    [["--framework", "vue"], "--framework"],
+    [["--name", "Intro"], "--name"],
+    [["--no-install"], "--no-install"],
+  ])("refuses %j without a terminal or --yes instead of ignoring it, before generating", async (flags, flag) => {
+    const { out, calls, run } = harness(nextApp(), { interactive: false });
+    expect(await run("hero.mp4", ...flags)).toBe(2);
+    expect(out.stderr).toBe(`${flag} sets up the project, which needs a terminal to confirm or --yes. Nothing was changed.\n`);
+    expect(calls.generate).toEqual([]);
+  });
+
   it("does not let a broken package.json break the frames", async () => {
     const { out, calls, run } = harness(project({ "package.json": "{ broken" }), { interactive: false });
     expect(await run("hero.mp4")).toBe(0);

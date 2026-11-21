@@ -102,6 +102,12 @@ export async function runCli(argv: string[], io: CliIO, overrides: Partial<RunDe
 
   // Without a person to ask and without --yes: exactly what the CLI always did, plus a hint.
   if (!flags.yes && !deps.interactive) {
+    // Set-up options cannot apply here; refuse them instead of silently ignoring them.
+    const setupFlag = flags.framework ? "--framework" : flags.name ? "--name" : !flags.install ? "--no-install" : null;
+    if (setupFlag) {
+      io.stderr.write(`${setupFlag} sets up the project, which needs a terminal to confirm or --yes. Nothing was changed.\n`);
+      return 2;
+    }
     const result = await runGenerate(options, io, deps);
     if (typeof result === "number") return result;
     io.stdout.write(reactSnippet(result));
