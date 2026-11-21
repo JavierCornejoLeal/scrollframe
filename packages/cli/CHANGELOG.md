@@ -1,4 +1,4 @@
-# scrollframe
+# @scrollframe/cli
 
 ## 0.1.0
 

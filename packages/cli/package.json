@@ -1,5 +1,5 @@
 {
-  "name": "scrollframe",
+  "name": "@scrollframe/cli",
   "version": "0.1.0",
   "description": "Turn a video into an optimized, SEO-friendly scroll storytelling sequence with one command.",
   "license": "MIT",

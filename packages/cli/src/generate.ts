@@ -62,7 +62,7 @@ export function ffmpegNotFoundMessage(ffmpeg: string, bundledBinaryBlocked: bool
     "ffmpeg not found. The ffmpeg bundled with scrollframe (ffmpeg-static) was not downloaded, usually because",
     "its install script was blocked (npm 12+ blocks dependency install scripts by default). Fix it with one of:",
     "",
-    "  npx --allow-scripts=ffmpeg-static scrollframe <video>",
+    "  npx --allow-scripts=ffmpeg-static @scrollframe/cli <video>",
     "  npm install-scripts approve ffmpeg-static && npm rebuild ffmpeg-static   (installed in a project)",
     "  install ffmpeg on your system, or pass --ffmpeg <path>",
   ].join("\n");

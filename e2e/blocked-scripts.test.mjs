@@ -11,7 +11,7 @@ import { dirname, join, resolve } from "node:path";
 import { after, before, test } from "node:test";
 
 const tarballs = resolve(process.env.TARBALLS ?? "");
-/** `scrollframe` must not match `scrollframe-core-*`: the name is followed by the version. */
+/** `scrollframe-cli` must not match a longer name: the name is followed by the version. */
 const tgz = (name) => {
   const file = readdirSync(tarballs).find((f) => f.startsWith(`${name}-`) && /^\d/.test(f.slice(name.length + 1)));
   assert.ok(file, `no ${name} tarball in ${tarballs}`);
@@ -19,7 +19,7 @@ const tgz = (name) => {
 };
 
 const FIXES = [
-  "npx --allow-scripts=ffmpeg-static scrollframe <video>",
+  "npx --allow-scripts=ffmpeg-static @scrollframe/cli <video>",
   "npm install-scripts approve ffmpeg-static && npm rebuild ffmpeg-static",
   "install ffmpeg on your system, or pass --ffmpeg <path>",
 ];
@@ -30,7 +30,7 @@ const npm = (args, cwd) => execSync(`npm ${args}`, { cwd, stdio: "pipe", encodin
 
 /** Runs the installed CLI with only Node on PATH, so no system ffmpeg can hide the problem. */
 function cli(args) {
-  const result = spawnSync(process.execPath, [join(project, "node_modules/scrollframe/dist/cli.js"), ...args], {
+  const result = spawnSync(process.execPath, [join(project, "node_modules/@scrollframe/cli/dist/cli.js"), ...args], {
     cwd: project,
     encoding: "utf8",
     env: { PATH: dirname(process.execPath), NO_COLOR: "1" },
@@ -47,7 +47,7 @@ before(() => {
   project = join(root, "app");
   mkdirSync(project);
   npm("init -y", project);
-  npm(`install --no-audit --no-fund "${tgz("scrollframe-core")}" "${tgz("scrollframe")}"`, project);
+  npm(`install --no-audit --no-fund "${tgz("scrollframe-core")}" "${tgz("scrollframe-cli")}"`, project);
   writeFileSync(join(project, "clip.mp4"), "");
 });
 after(() => rmSync(root, { recursive: true, force: true }));
@@ -88,7 +88,7 @@ test("the documented npx fix works in a project-less one-off run", () => {
   mkdirSync(scratch);
   const video = join(project, "clip.mp4");
   const result = spawnSync(
-    `npx -y --allow-scripts=ffmpeg-static -p "${tgz("scrollframe-core")}" -p "${tgz("scrollframe")}" scrollframe "${video}" --out out --frames 5 --widths 80,160,320`,
+    `npx -y --allow-scripts=ffmpeg-static -p "${tgz("scrollframe-core")}" -p "${tgz("scrollframe-cli")}" scrollframe "${video}" --out out --frames 5 --widths 80,160,320`,
     {
       cwd: scratch,
       shell: true,

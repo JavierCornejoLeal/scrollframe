@@ -3,7 +3,7 @@
 Turn a video into a scroll-driven storytelling section with one command, without sacrificing Core Web Vitals, accessibility or SEO.
 
 ```bash
-npx scrollframe hero.mp4
+npx @scrollframe/cli hero.mp4
 ```
 
 ```tsx
@@ -23,7 +23,7 @@ export default function Home() {
 
 | Package | Description |
 | --- | --- |
-| [`scrollframe`](packages/cli) | CLI: video → optimized WebP frames for mobile, tablet and desktop + `manifest.json` |
+| [`@scrollframe/cli`](packages/cli) | CLI (`scrollframe` command): video → optimized WebP frames for mobile, tablet and desktop + `manifest.json` |
 | [`@scrollframe/core`](packages/core) | Framework-agnostic canvas engine |
 | [`@scrollframe/react`](packages/react) | `<ScrollSequence>` component for React and Next.js |
 
@@ -57,6 +57,8 @@ Use `onProgress={(progress, frame) => ...}` when you need it in JavaScript.
 
 ## CLI options
 
+Run it once with `npx @scrollframe/cli <video>`, or install it (`npm i -D @scrollframe/cli`) and call the `scrollframe` command from your scripts.
+
 ```
 scrollframe <video> [options]
 
@@ -78,7 +80,7 @@ scrollframe bundles ffmpeg through [`ffmpeg-static`](https://github.com/eugenewa
 
 ```bash
 # One-off run
-npx --allow-scripts=ffmpeg-static scrollframe hero.mp4
+npx --allow-scripts=ffmpeg-static @scrollframe/cli hero.mp4
 
 # Installed in a project
 npm install-scripts approve ffmpeg-static && npm rebuild ffmpeg-static
