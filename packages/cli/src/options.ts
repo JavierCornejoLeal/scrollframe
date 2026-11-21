@@ -1,11 +1,14 @@
 import { parseArgs } from "node:util";
 import { posix, sep } from "node:path";
 import type { FrameSet, SequenceManifest } from "@scrollframe/core";
+import type { Framework } from "./detect.js";
 
 export const HELP = `Usage: scrollframe <video> [options]
 
-Extracts optimized WebP frames (mobile, tablet, desktop) and a manifest.json
-for the @scrollframe/react <ScrollSequence> component.
+Extracts optimized WebP frames (mobile, tablet, desktop) and a manifest.json.
+In a terminal it also detects your project (Next.js, React, Angular, Vue or
+plain HTML), shows a plan, and after one confirmation installs the matching
+scrollframe package and writes a ready-to-use component.
 
 Options:
   -o, --out <dir>         Output folder (default: public/sequence)
@@ -16,6 +19,10 @@ Options:
       --lossless          Lossless WebP (much heavier, hurts LCP; not recommended)
       --ffmpeg <path>     ffmpeg binary (default: FFMPEG_PATH, bundled ffmpeg-static, then PATH)
       --force             Overwrite a non-empty output folder
+  -y, --yes               Do not ask; set up the project (also without a terminal)
+      --framework <name>  Skip detection: next, react, angular, vue or html
+      --name <Name>       Component name (default: from the video, e.g. HeroSequence)
+      --no-install        Do not install the scrollframe package
   -h, --help              Show this help
 `;
 
@@ -30,6 +37,19 @@ export interface GenerateOptions {
   ffmpeg?: string;
   force: boolean;
 }
+
+/** How the project is set up after the frames. Absent flags mean "detect" / "ask". */
+export interface ScaffoldFlags {
+  yes: boolean;
+  framework?: Framework;
+  name?: string;
+  install: boolean;
+  /** `-o` / `--base-url` were given explicitly, so detection must not change them. */
+  outGiven: boolean;
+  baseUrlGiven: boolean;
+}
+
+export const FRAMEWORKS: readonly Framework[] = ["next", "react", "angular", "vue", "html"];
 
 export class UsageError extends Error {
   override name = "UsageError";
@@ -58,9 +78,16 @@ export function deriveBaseUrl(out: string): string {
 }
 
 export function parseCliArgs(argv: string[]): GenerateOptions | "help" {
-  const { values, positionals } = parseArgs({
+  const parsed = parseCommandLine(argv);
+  return parsed === "help" ? parsed : parsed.generate;
+}
+
+/** Frame options plus the project set-up flags. */
+export function parseCommandLine(argv: string[]): { generate: GenerateOptions; scaffold: ScaffoldFlags } | "help" {
+  const { values, positionals, tokens } = parseArgs({
     args: argv,
     allowPositionals: true,
+    tokens: true,
     options: {
       out: { type: "string", short: "o", default: "public/sequence" },
       "base-url": { type: "string", short: "b" },
@@ -70,6 +97,10 @@ export function parseCliArgs(argv: string[]): GenerateOptions | "help" {
       lossless: { type: "boolean", default: false },
       ffmpeg: { type: "string" },
       force: { type: "boolean", default: false },
+      yes: { type: "boolean", short: "y", default: false },
+      framework: { type: "string" },
+      name: { type: "string" },
+      "no-install": { type: "boolean", default: false },
       help: { type: "boolean", short: "h", default: false },
     },
   });
@@ -85,16 +116,34 @@ export function parseCliArgs(argv: string[]): GenerateOptions | "help" {
     throw new UsageError("--widths must be ascending: mobile < tablet < desktop.");
   }
 
+  const framework = values.framework;
+  if (framework !== undefined && !FRAMEWORKS.includes(framework as Framework)) {
+    throw new UsageError(`--framework must be one of: ${FRAMEWORKS.join(", ")} (got "${framework}").`);
+  }
+  if (values.name !== undefined && !/^[A-Z][A-Za-z0-9]*$/.test(values.name)) {
+    throw new UsageError(`--name must be a PascalCase component name such as HeroSequence (got "${values.name}").`);
+  }
+
   return {
-    input,
-    out: values.out,
-    baseUrl: values["base-url"] ?? deriveBaseUrl(values.out),
-    frames: toInt(values.frames, "--frames", 2, 600),
-    quality: toInt(values.quality, "--quality", 0, 100),
-    widths: widths as [number, number, number],
-    lossless: values.lossless,
-    ffmpeg: values.ffmpeg,
-    force: values.force,
+    generate: {
+      input,
+      out: values.out,
+      baseUrl: values["base-url"] ?? deriveBaseUrl(values.out),
+      frames: toInt(values.frames, "--frames", 2, 600),
+      quality: toInt(values.quality, "--quality", 0, 100),
+      widths: widths as [number, number, number],
+      lossless: values.lossless,
+      ffmpeg: values.ffmpeg,
+      force: values.force,
+    },
+    scaffold: {
+      yes: values.yes,
+      framework: framework as Framework | undefined,
+      name: values.name,
+      install: !values["no-install"],
+      outGiven: tokens.some((token) => token.kind === "option" && token.name === "out"),
+      baseUrlGiven: values["base-url"] !== undefined,
+    },
   };
 }
 

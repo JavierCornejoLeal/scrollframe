@@ -20,6 +20,8 @@ export interface ProjectInfo {
   /** null when nothing says which one: the caller falls back to npm. */
   packageManager: PackageManager | null;
   hasPackageJson: boolean;
+  /** Names of every dependency and devDependency. */
+  dependencies: string[];
   /** Folder served at the site root (`public`), or null when there is none. */
   publicDir: string | null;
 }
@@ -90,6 +92,7 @@ export function detectProject(root: string): ProjectInfo {
     typescript: existsSync(join(root, "tsconfig.json")) || "typescript" in deps,
     packageManager: detectPackageManager(root, pkg),
     hasPackageJson: pkg !== null,
+    dependencies: Object.keys(deps),
     publicDir: isDir(join(root, "public")) ? "public" : null,
   };
 }
