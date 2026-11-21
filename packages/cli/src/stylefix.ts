@@ -7,6 +7,10 @@ export interface FileEdit {
   path: string;
   before: string;
   after: string;
+  /** The plan step. */
+  description: string;
+  /** What to do by hand when the file changed after the plan was made. */
+  manual: string;
 }
 
 /** The global stylesheet each framework's starter template creates. */
@@ -47,5 +51,14 @@ export function planOverflowFixes(project: ProjectInfo, framework: Framework): F
   if (!path || !existsSync(join(project.root, path))) return [];
   const before = readFileSync(join(project.root, path), "utf8");
   const after = fixStickyOverflow(before);
-  return after === null ? [] : [{ path, before, after }];
+  if (after === null) return [];
+  return [
+    {
+      path,
+      before,
+      after,
+      description: `Change overflow-x: hidden to clip in ${path} (it stops the sequence from staying pinned)`,
+      manual: "Change overflow-x: hidden to clip there yourself.",
+    },
+  ];
 }

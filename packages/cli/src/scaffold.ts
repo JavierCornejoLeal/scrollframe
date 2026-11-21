@@ -3,6 +3,7 @@ import { createRequire } from "node:module";
 import { basename, extname, join } from "node:path";
 import type { Framework, PackageManager, ProjectInfo } from "./detect.js";
 import { deriveBaseUrl, type GenerateOptions, type ScaffoldFlags } from "./options.js";
+import { planAngularStyles } from "./angular.js";
 import { planOverflowFixes, type FileEdit } from "./stylefix.js";
 import { componentFor, type ComponentFile } from "./templates.js";
 
@@ -96,6 +97,11 @@ export function planScaffold(project: ProjectInfo, generate: GenerateOptions, fl
     }
   }
   const edits = framework === null ? [] : planOverflowFixes(project, framework);
+  if (framework === "angular") {
+    const { edit, note } = planAngularStyles(project);
+    if (edit) edits.unshift(edit);
+    if (note) notes.push(note);
+  }
   return { project, framework, generate: options, install, component, edits, notes };
 }
 
@@ -115,9 +121,7 @@ export function formatPlan(plan: ScaffoldPlan): string {
   const steps = [`Generate ${plan.generate.frames} frames in ${plan.generate.out.replace(/[\\/]+$/, "")}/`];
   if (plan.install) steps.push(`Install ${plan.install.pkg}  (${[plan.install.command, ...plan.install.args].join(" ")})`);
   if (plan.component) steps.push(`Create ${plan.component.path}`);
-  for (const edit of plan.edits) {
-    steps.push(`Change overflow-x: hidden to clip in ${edit.path} (it stops the sequence from staying pinned)`);
-  }
+  for (const edit of plan.edits) steps.push(edit.description);
   const lines = [
     ...(plan.project ? [describeProject(plan.project, plan.framework), ""] : []),
     "Plan:",

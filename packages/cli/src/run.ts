@@ -169,7 +169,7 @@ export async function runCli(argv: string[], io: CliIO, overrides: Partial<RunDe
     // Only apply the change to the exact file content the user saw in the plan.
     if (readFileSync(target, "utf8") !== edit.before) {
       io.stderr.write(
-        `${edit.path} changed after the plan was made; it was not modified. Change overflow-x: hidden to clip there yourself.\n`,
+        `${edit.path} changed after the plan was made; it was not modified. ${edit.manual}\n`,
       );
       continue;
     }

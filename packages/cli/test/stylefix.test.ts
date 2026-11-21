@@ -66,7 +66,13 @@ describe("planOverflowFixes", () => {
   ] as const)("%s %j: fixes %s", (framework, info, path) => {
     const p = project({ [path]: NEXT_16 }, { framework, ...info });
     expect(planOverflowFixes(p, framework)).toEqual([
-      { path, before: NEXT_16, after: NEXT_16.replace("overflow-x: hidden;", "overflow-x: clip;") },
+      {
+        path,
+        before: NEXT_16,
+        after: NEXT_16.replace("overflow-x: hidden;", "overflow-x: clip;"),
+        description: `Change overflow-x: hidden to clip in ${path} (it stops the sequence from staying pinned)`,
+        manual: "Change overflow-x: hidden to clip there yourself.",
+      },
     ]);
   });
 
