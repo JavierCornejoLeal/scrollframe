@@ -19,7 +19,7 @@ Branch: `feat/web-component` · Baseline: `84955e4` · Delivery: `ask-on-risk`, 
 - [x] T4 (S1) CI and release wiring: 4 tarballs, changesets `linked`, publish guard, publint/attw — inline
 - [x] T2c (S1, S3) review fixes: single manifest fetch on upgrade; honour `manifest` assigned before upgrade; any mount failure -> `sf-error`; `#posterMarkup` tracks what is on screen; React `<source>` key stays unique — inline
 - [x] T5 (S1, S2) browser e2e on a plain HTML page — inline
-- [ ] T6 (S1) README "Any framework / plain HTML" + minor changeset — inline
+- [x] T6 (S1) README "Any framework / plain HTML" + minor changeset — inline
 
 ## Log
 
@@ -56,3 +56,6 @@ Branch: `feat/web-component` · Baseline: `84955e4` · Delivery: `ask-on-risk`, 
 - L31: First run: the two held-script tests timed out in all browsers: my test waited for `domcontentloaded`, which deferred scripts block, while it held the deferred script (deadlock). Switched to `commit` + waiting for the poster; 12/12.
 - L32: T5 mutation checks: removing the static CSS link fails only the before-script test; reintroducing the double manifest load (`isConnected`) fails only the request-count test (Expected/Received 1 vs 2); restored, the rebuilt bundle is byte-identical, 4/4.
 - L33: Full browser suite: 46 passed, 6 skipped (Chromium-only CWV specs, as before: 34 + 12 new); CLI e2e 9/9. CI needs no change: browser-e2e already runs `npm run sequence`.
+- L34: T6: README section "Any framework or plain HTML" (CDN, server-rendered poster, bundler, Angular, Vue, attributes/events table), package README, packages table row, changeset (element minor, core minor, react patch).
+- L35: README examples run verbatim in scratch projects from the local tarballs: Vue 3 + Vite (`:manifest.prop`, `@sf-progress` with console.log): 0 manifest fetches, progress logged, stylesheet applied, overlay on top, no errors. Angular 22.3 (Angular CLI): first version did not compile (TS2307, wrong relative path `../../` from src/app/hero); rewritten to `src` (idiomatic: `public/` served at root): build ok, manifest fetched once, `(sf-progress)` handler called (verified with a temporary log), styles from angular.json applied. JSON-import variant verified with the corrected `../../../` path; it needs no `resolveJsonModule` (my first note claiming it did was wrong and was removed). Server-render snippet was missing `readFile`/`alt`; completed and run with Node: ok.
+- L36: Not verifiable before release: the jsDelivr URLs (`@scrollframe/element@0.2`); the same files are covered by the T5 plain HTML e2e.
