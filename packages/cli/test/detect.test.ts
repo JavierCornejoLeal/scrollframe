@@ -97,6 +97,11 @@ describe("detectProject: package manager", () => {
     expect(detectProject(project({ "package.json": pkg(), [lockfile]: "" })).packageManager).toBe(manager);
   });
 
+  it("ignores a packageManager field that is not a string", () => {
+    const root = project({ "package.json": pkg({}, { packageManager: { name: "pnpm" } }), "yarn.lock": "" });
+    expect(detectProject(root).packageManager).toBe("yarn");
+  });
+
   it("is null without a lockfile or packageManager field", () => {
     expect(detectProject(project({ "package.json": pkg() })).packageManager).toBeNull();
   });

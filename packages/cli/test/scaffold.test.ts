@@ -61,7 +61,7 @@ describe("componentName", () => {
     ["hero.mp4", "HeroSequence"],
     ["videos/my intro-video.mov", "MyIntroVideoSequence"],
     ["2024_launch.webm", "Video2024LaunchSequence"],
-    ["...mp4", "ScrollSequenceHero"],
+    ["...mp4", "VideoSequence"],
   ])("%s -> %s", (video, name) => {
     expect(componentName(video)).toBe(name);
   });
@@ -219,11 +219,12 @@ describe("runCli scaffold: flags and detection", () => {
     expect(calls.generate[0]).toMatchObject({ out: "static/seq", baseUrl: "/assets/seq" });
   });
 
-  it("stops with exit 2 on a broken package.json before changing anything", async () => {
+  it("still generates the frames with a broken package.json, and says why it skips the set-up", async () => {
     const { out, calls, run } = harness(project({ "package.json": "{ broken" }));
-    expect(await run("hero.mp4")).toBe(2);
-    expect(out.stderr).toMatch(/Could not read .*package\.json/);
-    expect(calls.generate).toEqual([]);
+    expect(await run("hero.mp4")).toBe(0);
+    expect(out.stdout).toMatch(/Could not read .*package\.json: .*\nOnly the frames will be generated\./);
+    expect(calls.generate).toHaveLength(1);
+    expect(calls.commands).toEqual([]);
   });
 });
 

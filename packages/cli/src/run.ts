@@ -3,7 +3,7 @@ import { createInterface } from "node:readline";
 import { detectProject } from "./detect.js";
 import { generateSequence } from "./generate.js";
 import { HELP, UsageError, parseCommandLine, type GenerateOptions } from "./options.js";
-import { formatPlan, planScaffold, setupHint, type ScaffoldPlan } from "./scaffold.js";
+import { formatPlan, framesOnlyPlan, planScaffold, setupHint, type ScaffoldPlan } from "./scaffold.js";
 
 export interface CliIO {
   stdout: { write(chunk: string): unknown; isTTY?: boolean };
@@ -65,19 +65,21 @@ function defaultDeps(io: CliIO): RunDeps {
 const reactSnippet = (manifestPath: string) =>
   `import manifest from "./${manifestPath}";\n<ScrollSequence manifest={manifest} alt="Describe the scene" />\n`;
 
-/** Generates the frames; returns the exit code on failure, or the manifest path. */
-async function runGenerate(options: GenerateOptions, io: CliIO, deps: RunDeps): Promise<number | string> {
+type GenerateOutcome = { ok: true; manifestPath: string } | { ok: false; exitCode: number };
+
+/** Generates the frames, reporting a failure on stderr with its exit code. */
+async function runGenerate(options: GenerateOptions, io: CliIO, deps: RunDeps): Promise<GenerateOutcome> {
   try {
     const { manifestPath, manifest } = await deps.generate(options, (line) => io.stdout.write(`${line}\n`));
     io.stdout.write(`\nDone: ${manifest.frameCount} frames -> ${manifestPath}\n\n`);
-    return manifestPath;
+    return { ok: true, manifestPath };
   } catch (error) {
     if (error instanceof UsageError) {
       io.stderr.write(`${error.message}\n`);
-      return 2;
+      return { ok: false, exitCode: 2 };
     }
     io.stderr.write(`Unexpected error: ${(error as Error).message}\n`);
-    return 1;
+    return { ok: false, exitCode: 1 };
   }
 }
 
@@ -109,8 +111,8 @@ export async function runCli(argv: string[], io: CliIO, overrides: Partial<RunDe
       return 2;
     }
     const result = await runGenerate(options, io, deps);
-    if (typeof result === "number") return result;
-    io.stdout.write(reactSnippet(result));
+    if (!result.ok) return result.exitCode;
+    io.stdout.write(reactSnippet(result.manifestPath));
     let hint: string | null = null;
     try {
       hint = setupHint(deps.detect(deps.cwd));
@@ -121,12 +123,13 @@ export async function runCli(argv: string[], io: CliIO, overrides: Partial<RunDe
     return 0;
   }
 
+  // Like the non-interactive path, an unreadable project must not block the frames: degrade to frames only.
   let plan: ScaffoldPlan;
   try {
     plan = planScaffold(deps.detect(deps.cwd), options, flags);
   } catch (error) {
-    io.stderr.write(`${(error as Error).message}\n`);
-    return error instanceof UsageError ? 2 : 1;
+    if (!(error instanceof UsageError)) throw error;
+    plan = framesOnlyPlan(options, error.message);
   }
   io.stdout.write(formatPlan(plan));
   if (!flags.yes && !(await deps.confirm("Continue? (Y/n) "))) {
@@ -135,7 +138,7 @@ export async function runCli(argv: string[], io: CliIO, overrides: Partial<RunDe
   }
 
   const result = await runGenerate(plan.generate, io, deps);
-  if (typeof result === "number") return result;
+  if (!result.ok) return result.exitCode;
 
   if (plan.install) {
     const { pkg, command, args } = plan.install;
@@ -149,6 +152,6 @@ export async function runCli(argv: string[], io: CliIO, overrides: Partial<RunDe
     }
   }
 
-  if (plan.framework === "next" || plan.framework === "react") io.stdout.write(reactSnippet(result));
+  if (plan.framework === "next" || plan.framework === "react") io.stdout.write(reactSnippet(result.manifestPath));
   return 0;
 }

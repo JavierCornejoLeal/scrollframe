@@ -76,7 +76,7 @@ function detectFramework(root: string, deps: Record<string, string>): Pick<Proje
 }
 
 function detectPackageManager(root: string, pkg: PackageJson | null): PackageManager | null {
-  const declared = pkg?.packageManager?.split("@")[0];
+  const declared = typeof pkg?.packageManager === "string" ? pkg.packageManager.split("@")[0] : undefined;
   if (declared === "pnpm" || declared === "yarn" || declared === "bun" || declared === "npm") return declared;
   return LOCKFILES.find(([file]) => existsSync(join(root, file)))?.[1] ?? null;
 }

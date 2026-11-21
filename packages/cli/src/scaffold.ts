@@ -33,16 +33,17 @@ export function installCommand(manager: PackageManager | null, pkg: string): { c
   return { command: manager, args: ["add", pkg] };
 }
 
-/** `hero.mp4` -> `HeroSequence`; `my intro-video.mov` -> `MyIntroVideoSequence`. */
+/** `hero.mp4` -> `HeroSequence`; `my intro-video.mov` -> `MyIntroVideoSequence`; no usable letters -> `VideoSequence`. */
 export function componentName(video: string): string {
   const words = basename(video, extname(video)).split(/[^A-Za-z0-9]+/).filter(Boolean);
-  if (words.length === 0) return "ScrollSequenceHero";
+  if (words.length === 0) return "VideoSequence";
   const pascal = words.map((word) => word[0]!.toUpperCase() + word.slice(1)).join("");
   return `${/^\d/.test(pascal) ? "Video" : ""}${pascal}Sequence`;
 }
 
 export interface ScaffoldPlan {
-  project: ProjectInfo;
+  /** null when the project could not be read: only the frames are generated. */
+  project: ProjectInfo | null;
   /** null for an unsupported framework: only the frames are generated. */
   framework: Framework | null;
   generate: GenerateOptions;
@@ -90,11 +91,20 @@ export function describeProject(project: ProjectInfo, framework: Framework | nul
   return `Project: ${LABELS[framework]}${router} · ${project.typescript ? "TypeScript" : "JavaScript"} · ${project.packageManager ?? "npm"}`;
 }
 
+/** Frames only, for a project that could not be read (e.g. a package.json in the middle of an edit). */
+export function framesOnlyPlan(generate: GenerateOptions, reason: string): ScaffoldPlan {
+  return { project: null, framework: null, generate, install: null, component: null, notes: [`${reason}\nOnly the frames will be generated.`] };
+}
+
 export function formatPlan(plan: ScaffoldPlan): string {
   const steps = [`Generate ${plan.generate.frames} frames in ${plan.generate.out.replace(/[\\/]+$/, "")}/`];
   if (plan.install) steps.push(`Install ${plan.install.pkg}  (${[plan.install.command, ...plan.install.args].join(" ")})`);
   if (plan.component) steps.push(`Create ${plan.component.path}`);
-  const lines = [describeProject(plan.project, plan.framework), "", "Plan:", ...steps.map((step, i) => ` ${i + 1}. ${step}`)];
+  const lines = [
+    ...(plan.project ? [describeProject(plan.project, plan.framework), ""] : []),
+    "Plan:",
+    ...steps.map((step, i) => ` ${i + 1}. ${step}`),
+  ];
   if (plan.notes.length > 0) lines.push("", ...plan.notes);
   return `${lines.join("\n")}\n\n`;
 }
