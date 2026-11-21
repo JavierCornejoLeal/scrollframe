@@ -295,3 +295,42 @@ describe("runCli scaffold: writing the component", () => {
     expect(existsSync(join(root, "components/HeroSequence.jsx"))).toBe(false);
   });
 });
+
+describe("runCli scaffold: fixing a stylesheet that breaks the pinned sequence", () => {
+  const HIDDEN = "html,\nbody {\n  max-width: 100vw;\n  overflow-x: hidden;\n}\n";
+  const withGlobals = () => {
+    const root = nextApp();
+    mkdirSync(join(root, "app"), { recursive: true });
+    writeFileSync(join(root, "app/globals.css"), HIDDEN);
+    return root;
+  };
+
+  it("lists the change in the plan and applies it after confirmation", async () => {
+    const root = withGlobals();
+    const { out, run } = harness(root);
+    expect(await run("hero.mp4")).toBe(0);
+    expect(out.stdout).toContain(" 4. Change overflow-x: hidden to clip in app/globals.css (it stops the sequence from staying pinned)");
+    expect(readFileSync(join(root, "app/globals.css"), "utf8")).toBe(HIDDEN.replace("hidden", "clip"));
+    expect(out.stdout).toContain("Updated app/globals.css");
+  });
+
+  it("leaves the stylesheet alone when the plan is cancelled", async () => {
+    const root = withGlobals();
+    const { run } = harness(root, { confirm: async () => false });
+    expect(await run("hero.mp4")).toBe(1);
+    expect(readFileSync(join(root, "app/globals.css"), "utf8")).toBe(HIDDEN);
+  });
+
+  it("does not overwrite a stylesheet that changed after the plan was shown", async () => {
+    const root = withGlobals();
+    const { out, run } = harness(root, {
+      confirm: async () => {
+        writeFileSync(join(root, "app/globals.css"), "/* edited meanwhile */\n" + HIDDEN);
+        return true;
+      },
+    });
+    expect(await run("hero.mp4")).toBe(0);
+    expect(readFileSync(join(root, "app/globals.css"), "utf8")).toBe("/* edited meanwhile */\n" + HIDDEN);
+    expect(out.stderr).toContain("app/globals.css changed after the plan was made; it was not modified. Change overflow-x: hidden to clip there yourself.");
+  });
+});

@@ -1,4 +1,4 @@
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createInterface } from "node:readline";
 import { dirname, join } from "node:path";
 import { detectProject } from "./detect.js";
@@ -162,6 +162,18 @@ export async function runCli(argv: string[], io: CliIO, overrides: Partial<RunDe
     io.stdout.write(`Created ${path}\n\n${usage.join("\n")}\n`);
   } else if (plan.framework === "next" || plan.framework === "react") {
     io.stdout.write(reactSnippet(result.manifestPath));
+  }
+  for (const edit of plan.edits) {
+    const target = join(deps.cwd, edit.path);
+    // Only apply the change to the exact file content the user saw in the plan.
+    if (readFileSync(target, "utf8") !== edit.before) {
+      io.stderr.write(
+        `${edit.path} changed after the plan was made; it was not modified. Change overflow-x: hidden to clip there yourself.\n`,
+      );
+      continue;
+    }
+    writeFileSync(target, edit.after);
+    io.stdout.write(`Updated ${edit.path}\n`);
   }
   return 0;
 }

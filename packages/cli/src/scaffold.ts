@@ -2,6 +2,7 @@ import { existsSync } from "node:fs";
 import { basename, extname, join } from "node:path";
 import type { Framework, PackageManager, ProjectInfo } from "./detect.js";
 import { deriveBaseUrl, type GenerateOptions, type ScaffoldFlags } from "./options.js";
+import { planOverflowFixes, type FileEdit } from "./stylefix.js";
 import { componentFor, type ComponentFile } from "./templates.js";
 
 const LABELS: Record<Framework, string> = {
@@ -49,6 +50,8 @@ export interface ScaffoldPlan {
   generate: GenerateOptions;
   install: { pkg: string; command: string; args: string[] } | null;
   component: ComponentFile | null;
+  /** Changes to the user's stylesheets that keep the sequence pinned (see stylefix.ts). */
+  edits: FileEdit[];
   notes: string[];
 }
 
@@ -81,7 +84,8 @@ export function planScaffold(project: ProjectInfo, generate: GenerateOptions, fl
       component = null;
     }
   }
-  return { project, framework, generate: options, install, component, notes };
+  const edits = framework === null ? [] : planOverflowFixes(project, framework);
+  return { project, framework, generate: options, install, component, edits, notes };
 }
 
 export function describeProject(project: ProjectInfo, framework: Framework | null): string {
@@ -93,13 +97,16 @@ export function describeProject(project: ProjectInfo, framework: Framework | nul
 
 /** Frames only, for a project that could not be read (e.g. a package.json in the middle of an edit). */
 export function framesOnlyPlan(generate: GenerateOptions, reason: string): ScaffoldPlan {
-  return { project: null, framework: null, generate, install: null, component: null, notes: [`${reason}\nOnly the frames will be generated.`] };
+  return { project: null, framework: null, generate, install: null, component: null, edits: [], notes: [`${reason}\nOnly the frames will be generated.`] };
 }
 
 export function formatPlan(plan: ScaffoldPlan): string {
   const steps = [`Generate ${plan.generate.frames} frames in ${plan.generate.out.replace(/[\\/]+$/, "")}/`];
   if (plan.install) steps.push(`Install ${plan.install.pkg}  (${[plan.install.command, ...plan.install.args].join(" ")})`);
   if (plan.component) steps.push(`Create ${plan.component.path}`);
+  for (const edit of plan.edits) {
+    steps.push(`Change overflow-x: hidden to clip in ${edit.path} (it stops the sequence from staying pinned)`);
+  }
   const lines = [
     ...(plan.project ? [describeProject(plan.project, plan.framework), ""] : []),
     "Plan:",
