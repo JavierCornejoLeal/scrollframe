@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { PassThrough } from "node:stream";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -259,5 +259,39 @@ describe("runCli scaffold: the real prompt", () => {
     setTimeout(() => stdin.write(answer), 20);
     expect(await result).toBe(code);
     expect(generate).toHaveBeenCalledTimes(code === 0 ? 1 : 0);
+  });
+});
+
+describe("runCli scaffold: writing the component", () => {
+  it("creates the planned component and prints how to use it", async () => {
+    const root = nextApp();
+    const { out, run } = harness(root);
+    expect(await run("hero.mp4")).toBe(0);
+    expect(out.stdout).toContain(" 3. Create components/HeroSequence.jsx");
+    expect(readFileSync(join(root, "components/HeroSequence.jsx"), "utf8")).toContain("export default function HeroSequence()");
+    expect(out.stdout).toContain("Created components/HeroSequence.jsx");
+    expect(out.stdout).toContain('  import HeroSequence from "../components/HeroSequence";');
+    expect(out.stdout).not.toContain("<ScrollSequence manifest={manifest}");
+  });
+
+  it("never overwrites an existing component and says so in the plan", async () => {
+    const root = nextApp();
+    mkdirSync(join(root, "components"));
+    writeFileSync(join(root, "components/HeroSequence.jsx"), "// mine");
+    const { out, run } = harness(root);
+    expect(await run("hero.mp4")).toBe(0);
+    expect(out.stdout).toContain("components/HeroSequence.jsx already exists and will not be changed (use --name to create another one).");
+    expect(readFileSync(join(root, "components/HeroSequence.jsx"), "utf8")).toBe("// mine");
+  });
+
+  it("does not write the component when the install fails", async () => {
+    const root = nextApp();
+    const { run } = harness(root, {
+      runCommand: async () => {
+        throw new Error("exit code 1");
+      },
+    });
+    expect(await run("hero.mp4")).toBe(1);
+    expect(existsSync(join(root, "components/HeroSequence.jsx"))).toBe(false);
   });
 });

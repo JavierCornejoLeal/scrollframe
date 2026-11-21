@@ -75,7 +75,7 @@ export function planScaffold(project: ProjectInfo, generate: GenerateOptions, fl
   let component: ComponentFile | null = null;
   if (framework !== null) {
     const name = flags.name ?? componentName(generate.input);
-    component = componentFor(framework, { project, name, out: options.out, baseUrl: options.baseUrl });
+    component = componentFor(framework, { project, name, video: generate.input, out: options.out, baseUrl: options.baseUrl });
     if (component && existsSync(join(project.root, component.path))) {
       notes.push(`${component.path} already exists and will not be changed (use --name to create another one).`);
       component = null;

@@ -1,4 +1,6 @@
+import { mkdirSync, writeFileSync } from "node:fs";
 import { createInterface } from "node:readline";
+import { dirname, join } from "node:path";
 import { detectProject } from "./detect.js";
 import { generateSequence } from "./generate.js";
 import { spawnCommand } from "./install.js";
@@ -146,6 +148,20 @@ export async function runCli(argv: string[], io: CliIO, overrides: Partial<RunDe
     }
   }
 
-  if (plan.framework === "next" || plan.framework === "react") io.stdout.write(reactSnippet(result.manifestPath));
+  if (plan.component) {
+    const { path, contents, usage } = plan.component;
+    const target = join(deps.cwd, path);
+    try {
+      mkdirSync(dirname(target), { recursive: true });
+      // "wx" fails if the file appeared since the plan was made: never overwrite the user's code.
+      writeFileSync(target, contents, { flag: "wx" });
+    } catch (error) {
+      io.stderr.write(`Could not create ${path}: ${(error as Error).message}\n`);
+      return 1;
+    }
+    io.stdout.write(`Created ${path}\n\n${usage.join("\n")}\n`);
+  } else if (plan.framework === "next" || plan.framework === "react") {
+    io.stdout.write(reactSnippet(result.manifestPath));
+  }
   return 0;
 }
