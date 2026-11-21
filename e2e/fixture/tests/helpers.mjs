@@ -32,14 +32,17 @@ export async function waitForAllFrames(tracker, set) {
     .toBe(FRAME_COUNT);
 }
 
-/** Scrolls so the sequence sits at `progress` (0..1) and waits for the engine to report it. */
-export async function scrollToProgress(page, progress) {
-  await page.evaluate((progress) => {
-    const section = document.querySelector("section");
+/**
+ * Scrolls so the sequence sits at `progress` (0..1) and waits for the engine to report it.
+ * `root` is the sequence element: the React `<section>` or the `<scroll-sequence>` element.
+ */
+export async function scrollToProgress(page, progress, root = "section") {
+  await page.evaluate(({ progress, root }) => {
+    const section = document.querySelector(root);
     const top = section.getBoundingClientRect().top + window.scrollY;
     const distance = section.offsetHeight - window.innerHeight;
     window.scrollTo(0, Math.round(top + progress * distance));
-  }, progress);
+  }, { progress, root });
   const expected = Math.round(progress * (FRAME_COUNT - 1));
   await expect.poll(() => page.evaluate(() => window.__scrollframe.frame)).toBe(expected);
   return expected;
@@ -49,10 +52,10 @@ export async function scrollToProgress(page, progress) {
  * Mean absolute difference (0..255) between what the canvas shows and frame `index` of
  * `set` drawn the same way. ~0 means the canvas is showing exactly that frame.
  */
-export async function canvasDiff(page, set, index) {
+export async function canvasDiff(page, set, index, root = "section") {
   return page.evaluate(
-    async ({ set, index }) => {
-      const canvas = document.querySelector("section canvas");
+    async ({ set, index, root }) => {
+      const canvas = document.querySelector(`${root} canvas`);
       const { width, height } = canvas;
       const image = new Image();
       image.src = `/sequence/${set}/frame-${String(index).padStart(4, "0")}.webp`;
@@ -70,11 +73,11 @@ export async function canvasDiff(page, set, index) {
       }
       return sum / ((a.length / 4) * 3);
     },
-    { set, index },
+    { set, index, root },
   );
 }
 
 /** Waits until the canvas shows exactly frame `index`. */
-export async function expectCanvasShows(page, set, index) {
-  await expect.poll(() => canvasDiff(page, set, index), { message: `canvas shows frame ${index}` }).toBeLessThan(1);
+export async function expectCanvasShows(page, set, index, root = "section") {
+  await expect.poll(() => canvasDiff(page, set, index, root), { message: `canvas shows frame ${index}` }).toBeLessThan(1);
 }

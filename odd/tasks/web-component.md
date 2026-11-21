@@ -18,7 +18,7 @@ Branch: `feat/web-component` · Baseline: `84955e4` · Delivery: `ask-on-risk`, 
 - [x] T3 (S1) global `<script>` bundle (IIFE, core included) — inline
 - [x] T4 (S1) CI and release wiring: 4 tarballs, changesets `linked`, publish guard, publint/attw — inline
 - [x] T2c (S1, S3) review fixes: single manifest fetch on upgrade; honour `manifest` assigned before upgrade; any mount failure -> `sf-error`; `#posterMarkup` tracks what is on screen; React `<source>` key stays unique — inline
-- [ ] T5 (S1, S2) browser e2e on a plain HTML page — inline
+- [x] T5 (S1, S2) browser e2e on a plain HTML page — inline
 - [ ] T6 (S1) README "Any framework / plain HTML" + minor changeset — inline
 
 ## Log
@@ -52,3 +52,7 @@ Branch: `feat/web-component` · Baseline: `84955e4` · Delivery: `ask-on-risk`, 
 - L27: T2c RED (5, each for its reason): upgrade fetched twice ("called 2 times"); pre-upgrade `manifest` ignored (no engine); engine failure not reported (no sf-error); adopted poster never corrected ("Old alt"); React duplicate key warning. The first React key test used renderToString, which never warns about keys, so it passed with the bug; moved to the client-render lifecycle test, where it failed.
 - L28: T2c GREEN: refreshes are ignored until connectedCallback (`#connected`), so upgrade attribute callbacks no longer reload; the constructor moves a pre-upgrade own `manifest` property into the private field; parse + mount run in one try and any failure destroys the engine and dispatches `sf-error`; the poster is kept on first mount, later only when its `outerHTML` equals the computed markup; React keys `<source>` by `srcset`. vitest 112/112, typecheck ok. Mutation checks: each of the 5 fixes reverted fails its test; restored.
 - L29: T2c browser re-run: manifest requested once (CDN and ESM pages, no abort); T2 smoke, T2b LCP and T3 CDN (Chromium/Firefox/WebKit) results unchanged.
+- L30: T5: fixture `plain.mjs` (chained after `npm run sequence`) writes `public/plain.html`: CDN bundle in a deferred classic script, static stylesheet, server-rendered stage via `renderStageMarkup`; Vite copies it verbatim with `public/vendor`. `tests/plain.spec.mjs` (Chromium/Firefox/WebKit): poster loaded and overlay on it before the script runs; after it, same server `<img>`, one stage, one canvas, manifest and poster requested once; canvas shows frames 0/15/30/44/59 at 0-100%; overlay pinned, direct child, `--sf-progress` ~0.5. Helpers take an optional root selector (default `section`).
+- L31: First run: the two held-script tests timed out in all browsers: my test waited for `domcontentloaded`, which deferred scripts block, while it held the deferred script (deadlock). Switched to `commit` + waiting for the poster; 12/12.
+- L32: T5 mutation checks: removing the static CSS link fails only the before-script test; reintroducing the double manifest load (`isConnected`) fails only the request-count test (Expected/Received 1 vs 2); restored, the rebuilt bundle is byte-identical, 4/4.
+- L33: Full browser suite: 46 passed, 6 skipped (Chromium-only CWV specs, as before: 34 + 12 new); CLI e2e 9/9. CI needs no change: browser-e2e already runs `npm run sequence`.
