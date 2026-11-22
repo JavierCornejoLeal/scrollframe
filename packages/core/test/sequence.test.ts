@@ -15,15 +15,55 @@ const manifest = parseManifest({
   ],
 });
 
-/** Fake <img>: records every requested url and lets each test decide when (and whether) it decodes. */
+/**
+ * Fake <img>: setting src downloads (recorded once per url, like the browser's cache), decode()
+ * waits for the download, and each test decides when and whether it arrives.
+ */
 class FakeImage {
   static requests: string[] = [];
-  static pending = new Map<string, { resolve: () => void; reject: (e: Error) => void; image: FakeImage }>();
+  static pending = new Map<string, { resolve: () => void; reject: (e: Error) => void }>();
+  static arrived = new Set<string>();
+  static waiting = new Map<string, FakeImage[]>();
+  static decoded: string[] = [];
   decoding = "";
-  src = "";
+  onload: (() => void) | null = null;
+  onerror: (() => void) | null = null;
+  private url = "";
+  private settle: ((ok: boolean) => void)[] = [];
+
+  get src() {
+    return this.url;
+  }
+  set src(url: string) {
+    this.url = url;
+    if (FakeImage.arrived.has(url)) {
+      queueMicrotask(() => this.finish(true));
+      return;
+    }
+    const waiting = FakeImage.waiting.get(url);
+    if (waiting) {
+      waiting.push(this);
+      return;
+    }
+    const images: FakeImage[] = [this];
+    FakeImage.waiting.set(url, images);
+    FakeImage.requests.push(url);
+    const end = (ok: boolean) => {
+      FakeImage.waiting.delete(url);
+      FakeImage.pending.delete(url);
+      if (ok) FakeImage.arrived.add(url);
+      for (const image of images) image.finish(ok);
+    };
+    FakeImage.pending.set(url, { resolve: () => end(true), reject: () => end(false) });
+  }
+  private finish(ok: boolean) {
+    (ok ? this.onload : this.onerror)?.();
+    for (const settle of this.settle.splice(0)) settle(ok);
+  }
   decode(): Promise<void> {
-    FakeImage.requests.push(this.src);
-    return new Promise((resolve, reject) => FakeImage.pending.set(this.src, { resolve, reject, image: this }));
+    FakeImage.decoded.push(this.url);
+    if (FakeImage.arrived.has(this.url)) return Promise.resolve();
+    return new Promise((resolve, reject) => this.settle.push((ok) => (ok ? resolve() : reject(new Error("failed")))));
   }
 }
 
@@ -79,7 +119,7 @@ function create(extra: Partial<ScrollSequenceOptions> = {}) {
   const container = document.createElement("section");
   container.getBoundingClientRect = () => ({ top: rect.top, height: rect.height }) as DOMRect;
   const canvas = document.createElement("canvas");
-  const engine = new ScrollSequence({ container, canvas, manifest, ...extra });
+  const engine = new ScrollSequence({ container, canvas, manifest, smoothing: 0, ...extra });
   live.push(engine);
   return { engine, container, canvas };
 }
@@ -87,6 +127,9 @@ function create(extra: Partial<ScrollSequenceOptions> = {}) {
 beforeEach(() => {
   FakeImage.requests = [];
   FakeImage.pending = new Map();
+  FakeImage.arrived = new Set();
+  FakeImage.waiting = new Map();
+  FakeImage.decoded = [];
   FakeObserver.instances = [];
   rafQueue = [];
   rect = { top: 0, height: 3000 };
@@ -405,5 +448,109 @@ describe("sticky blockers: one hidden axis", () => {
     expect(warn.mock.calls[0]![0]).toMatch(/^scrollframe: div\.page has "overflow-y: hidden".*Use "overflow-y: clip" instead/);
     warn.mockRestore();
     wrapper.remove();
+  });
+});
+
+describe("fluid scrolling", () => {
+  const long = parseManifest({ ...manifest, frameCount: 1800, padding: 4 });
+  const at = (url: string) => Number(/f-(\d+)/.exec(url)![1]);
+
+  async function downloadAll(limit = 5000) {
+    for (let i = 0; i < limit && FakeImage.pending.size > 0; i++) {
+      for (const entry of [...FakeImage.pending.values()]) entry.resolve();
+      await tick();
+    }
+  }
+  function scrollTo(progress: number) {
+    rect.top = -2000 * progress;
+    window.dispatchEvent(new Event("scroll"));
+  }
+  async function settle(times = 30) {
+    for (let i = 0; i < times; i++) {
+      flushFrames();
+      await tick();
+    }
+  }
+
+  it("eases towards the scroll position instead of jumping to it", async () => {
+    const onProgress = vi.fn();
+    const { engine } = create({ smoothing: 80, onProgress });
+    engine.start();
+    flushFrames();
+    scrollTo(1);
+    flushFrames();
+    const [first] = onProgress.mock.calls.at(-1)!;
+    expect(first).toBeGreaterThan(0);
+    expect(first).toBeLessThan(0.5);
+    await settle(80);
+    expect(onProgress).toHaveBeenLastCalledWith(1, 39);
+  });
+
+  it("starts at the scroll position of a restored page without easing to it", () => {
+    const onProgress = vi.fn();
+    rect.top = -1000;
+    create({ smoothing: 80, onProgress }).engine.start();
+    flushFrames();
+    expect(onProgress).toHaveBeenLastCalledWith(0.5, 20);
+  });
+
+  it("stops asking for animation frames once it has arrived", async () => {
+    create({ smoothing: 80 }).engine.start();
+    flushFrames();
+    scrollTo(0.5);
+    await settle(80);
+    expect(rafQueue).toEqual([]);
+  });
+
+  it("decodes only a window of frames around the scroll position", async () => {
+    create({ manifest: parseManifest({ ...manifest, frameCount: 240, padding: 4 }) }).engine.start();
+    FakeObserver.instances[0]!.intersect();
+    await downloadAll();
+    await settle();
+    expect(new Set(FakeImage.decoded).size).toBeLessThan(40);
+    scrollTo(0.5);
+    await settle();
+    expect(at((drawImage.mock.calls.at(-1)![0] as FakeImage).src)).toBe(120);
+  });
+
+  it("a long sequence downloads a coarse pass and what is near, not every frame", async () => {
+    create({ manifest: long }).engine.start();
+    FakeObserver.instances[0]!.intersect();
+    await downloadAll();
+    await settle();
+    const wanted = FakeImage.requests.map(at);
+    expect(wanted.length).toBeLessThan(400);
+    expect(wanted).toContain(1799); // the end is never blank
+    expect(wanted).toContain(100); // near the start
+    expect(wanted).not.toContain(901); // far, and not in the coarse pass
+  });
+
+  it("a long sequence downloads what the scroll reaches and shows that exact frame", async () => {
+    create({ manifest: long }).engine.start();
+    FakeObserver.instances[0]!.intersect();
+    await downloadAll();
+    scrollTo(901 / 1799);
+    for (let i = 0; i < 4; i++) {
+      await settle();
+      await downloadAll();
+    }
+    await settle();
+    expect(FakeImage.requests.map(at)).toContain(901);
+    expect(at((drawImage.mock.calls.at(-1)![0] as FakeImage).src)).toBe(901);
+  });
+});
+
+describe("full width", () => {
+  it.each([
+    [true, "1200px", "-40px"],
+    [undefined, "", ""],
+  ])("fullWidth %j", (fullWidth, width, left) => {
+    Object.defineProperty(document.documentElement, "clientWidth", { configurable: true, value: 1200 });
+    const container = document.createElement("section");
+    container.getBoundingClientRect = () =>
+      ({ top: 0, height: 3000, left: 40 + (parseFloat(container.style.left) || 0) }) as DOMRect;
+    live.push(new ScrollSequence({ container, canvas: document.createElement("canvas"), manifest, fullWidth }).start());
+    expect([container.style.width, container.style.left]).toEqual([width, left]);
+    delete (document.documentElement as { clientWidth?: number }).clientWidth;
   });
 });

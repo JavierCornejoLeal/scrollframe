@@ -34,9 +34,12 @@ export function posterImage(manifest: SequenceManifest, baseUrl?: string): Poste
   const largest = manifest.sets[manifest.sets.length - 1]!;
   return {
     sources: manifest.sets
-      .filter((set) => set.maxViewportWidth !== null)
+      .filter((set) => set.maxViewportWidth !== null || set.maxAspectRatio !== undefined)
       .map((set) => ({
-        media: `(max-width: ${set.maxViewportWidth}px)`,
+        media:
+          set.maxAspectRatio === undefined
+            ? `(max-width: ${set.maxViewportWidth}px)`
+            : `(max-aspect-ratio: ${Math.round(set.maxAspectRatio * 1000)}/1000)`,
         srcset: posterUrl(manifest, set, baseUrl),
         width: set.width,
         height: set.height,
