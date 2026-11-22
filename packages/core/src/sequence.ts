@@ -46,6 +46,9 @@ const STRIDE_HEADROOM = 0.6;
 const VELOCITY_WEIGHT = 0.4;
 /** A first guess of the milliseconds a frame takes to decode, until one is measured. */
 const FIRST_DECODE_COST = 20;
+/** Weight of the newest measurement in the decode cost, and the most one measurement may count. */
+const COST_WEIGHT = 0.2;
+const MAX_DECODE_COST = 200;
 
 type Frame = HTMLImageElement | ImageBitmap;
 
@@ -124,8 +127,6 @@ export class ScrollSequence {
   private failed = new Set<number>();
   private decoded = new Map<number, Frame>();
   private decoding = new Set<number>();
-  /** Downloaded but undecodable: never tried again. */
-  private broken = new Set<number>();
   private decodeCost = FIRST_DECODE_COST;
   private generation = 0;
   private observer: IntersectionObserver | null = null;
@@ -280,7 +281,6 @@ export class ScrollSequence {
     this.decoded.forEach(release);
     this.decoded.clear();
     this.decoding.clear();
-    this.broken.clear();
   }
 
   private readonly schedule = (): void => {
@@ -474,7 +474,7 @@ export class ScrollSequence {
     for (let k = 0; k < DECODE_AHEAD; k++) wanted.push(base + k * stride * this.direction);
     for (let k = 1; k <= DECODE_BEHIND; k++) wanted.push(this.target - k * this.direction);
 
-    const available = (i: number) => this.frames[i] != null && !this.broken.has(i);
+    const available = (i: number) => this.frames[i] != null;
     for (const [order, raw] of wanted.entries()) {
       if (this.decoding.size >= DECODE_SLOTS) break;
       // The first one always has a frame to show, even past either end of the sequence.
@@ -499,7 +499,7 @@ export class ScrollSequence {
       (frame) => {
         if (generation !== this.generation) return release(frame);
         this.decoding.delete(index);
-        this.decodeCost = this.decodeCost * 0.8 + Math.min(performance.now() - startedAt, 200) * 0.2;
+        this.decodeCost = this.decodeCost * (1 - COST_WEIGHT) + Math.min(performance.now() - startedAt, MAX_DECODE_COST) * COST_WEIGHT;
         this.decoded.set(index, frame);
         this.trimDecoded();
         this.schedule();
@@ -507,7 +507,14 @@ export class ScrollSequence {
       () => {
         if (generation !== this.generation) return;
         this.decoding.delete(index);
-        this.broken.add(index);
+        // Downloaded again and retried like a failed download, within the same budget, so a
+        // passing failure (memory pressure, an evicted cache entry) leaves no hole.
+        if (this.frames[index]) {
+          this.frames[index] = null;
+          this.downloaded--;
+        }
+        this.failed.add(index);
+        if (this.requested.size === 0) this.scheduleRetry();
         this.schedule();
       },
     );

@@ -207,7 +207,10 @@ describe("componentFor: what every template shares", () => {
 
   it.each(["angular", "vue", "html"] as const)("%s takes the scroll length of the sequence before any script runs", (framework) => {
     const file = componentFor(framework, ctx({ framework }))!;
-    expect(file.render({ ...manifest, scrollLength: "630vh" })).toContain('scroll-length="630vh" style="--sf-scroll-length:630vh"');
+    // A style, not the attribute: the attribute would win over the manifest of a later, longer video.
+    const html = file.render({ ...manifest, scrollLength: "630vh" });
+    expect(html).toContain('style="--sf-scroll-length:630vh"');
+    expect(html).not.toContain("scroll-length=");
     expect(file.render(manifest)).not.toContain("scroll-length");
   });
 });

@@ -36,9 +36,12 @@ const commentSafe = (video: string) => basename(video).replace(/[^A-Za-z0-9 ._()
 /** A serving URL inside an attribute: without this, "&copy" would be read as an entity. */
 const attrUrl = (url: string) => url.replace(/&/g, "&amp;");
 
-/** Both, so the height is right before the script runs and when it does. parseManifest checked the value. */
-const lengthAttrs = ({ scrollLength }: SequenceManifest) =>
-  scrollLength ? ` scroll-length="${scrollLength}" style="--sf-scroll-length:${scrollLength}"` : "";
+/**
+ * A style, so the height is right before the script runs. Not the attribute: it would win over the
+ * manifest of a later, longer video. parseManifest checked the value.
+ */
+const lengthStyle = ({ scrollLength }: SequenceManifest) =>
+  scrollLength ? ` style="--sf-scroll-length:${scrollLength}"` : "";
 
 const toPosix = (path: string) => path.replace(/\\/g, "/").replace(/\/+$/, "");
 
@@ -92,7 +95,7 @@ function htmlSnippet(context: TemplateContext): ComponentFile {
 <script src="${cdn}" defer></script>
 
 <!-- 2. Where the sequence goes (the poster is already in the HTML, so it shows before any script runs): -->
-<scroll-sequence src="${attrUrl(context.baseUrl)}/manifest.json" alt="${ALT}"${lengthAttrs(manifest)}>
+<scroll-sequence src="${attrUrl(context.baseUrl)}/manifest.json" alt="${ALT}"${lengthStyle(manifest)}>
   ${renderStageMarkup(manifest, { alt: ALT })}
 </scroll-sequence>
 `,
@@ -115,7 +118,7 @@ import "@scrollframe/element";
   selector: "app-${file}",
   schemas: [CUSTOM_ELEMENTS_SCHEMA],
   template: \`
-    <scroll-sequence src="${attrUrl(baseUrl)}/manifest.json" alt="${ALT}"${lengthAttrs(manifest)}>
+    <scroll-sequence src="${attrUrl(baseUrl)}/manifest.json" alt="${ALT}"${lengthStyle(manifest)}>
     </scroll-sequence>
   \`,
 })
@@ -164,7 +167,7 @@ import "@scrollframe/element/style.css";
 </script>
 
 <template>
-  <scroll-sequence src="${attrUrl(baseUrl)}/manifest.json" alt="${ALT}"${lengthAttrs(manifest)}>
+  <scroll-sequence src="${attrUrl(baseUrl)}/manifest.json" alt="${ALT}"${lengthStyle(manifest)}>
   </scroll-sequence>
 </template>
 `,

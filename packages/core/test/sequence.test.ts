@@ -368,6 +368,36 @@ describe("ScrollSequence recovery", () => {
     expect(delays).toEqual([1000, 2000]);
   });
 
+  it("a frame that failed to decode is tried again, not left as a hole", async () => {
+    create({ concurrency: 1 }).engine.start();
+    FakeObserver.instances[0]!.intersect();
+    await flush();
+    const decode = FakeImage.prototype.decode;
+    let failures = 0;
+    // Downloaded fine, but its first decode fails (memory pressure, an evicted cache entry).
+    FakeImage.prototype.decode = function (this: FakeImage) {
+      if (this.src.endsWith("f-00.webp") && failures++ === 0) return Promise.reject(new Error("decode"));
+      return decode.call(this);
+    };
+    try {
+      for (let i = 0; i < 400 && FakeImage.pending.size > 0; i++) {
+        for (const entry of [...FakeImage.pending.values()]) entry.resolve();
+        await flush();
+      }
+      flushFrames();
+      await vi.advanceTimersByTimeAsync(1000);
+      for (let i = 0; i < 20; i++) {
+        for (const entry of [...FakeImage.pending.values()]) entry.resolve();
+        await flush();
+        flushFrames();
+      }
+      expect(failures).toBeGreaterThan(1);
+      expect((drawImage.mock.calls.at(-1)![0] as FakeImage).src).toBe("/seq/m/f-00.webp");
+    } finally {
+      FakeImage.prototype.decode = decode;
+    }
+  });
+
   it("cancels pending retries on destroy", async () => {
     const engine = await startOffline();
     engine.destroy();

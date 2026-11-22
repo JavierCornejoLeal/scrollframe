@@ -217,7 +217,10 @@ const FULL_QUALITY = 84;
 const PHONE_FULL_WIDTH = 1080;
 /** A crop is worth it only if the video is clearly wider than the screen shape it is for. */
 const CROP_TOLERANCE = 1.05;
-/** The large set must add at least this much over 1920 to be worth its bytes. */
+/** Full frames for most screens, and for large or dense ones. */
+const DESKTOP_WIDTH = 1920;
+const LARGE_WIDTH = 2560;
+/** The large set must add at least this much over the desktop one to be worth its bytes. */
 const LARGE_GAIN = 1.1;
 
 const CROPS = [
@@ -250,10 +253,9 @@ export function planAdaptiveSets(width: number, height: number): PlannedSet[] {
     });
   }
   if (sets.length === 0 && width > PHONE_FULL_WIDTH) full("mobile", PHONE_MAX_WIDTH, PHONE_FULL_WIDTH, PHONE_QUALITY);
-  const large = Math.min(2560, width);
-  const hasLarge = large > 1920 * LARGE_GAIN;
-  full("desktop", hasLarge ? 1920 : null, 1920, FULL_QUALITY);
-  if (hasLarge) full("large", null, 2560, FULL_QUALITY);
+  const hasLarge = Math.min(LARGE_WIDTH, width) > DESKTOP_WIDTH * LARGE_GAIN;
+  full("desktop", hasLarge ? DESKTOP_WIDTH : null, DESKTOP_WIDTH, FULL_QUALITY);
+  if (hasLarge) full("large", null, LARGE_WIDTH, FULL_QUALITY);
   return sets;
 }
 

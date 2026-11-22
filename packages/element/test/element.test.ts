@@ -363,3 +363,25 @@ describe("<scroll-sequence> size", () => {
     }
   });
 });
+
+describe("<scroll-sequence> scroll length from the page", () => {
+  it("keeps the length written in the page while the manifest loads, then takes the manifest's", async () => {
+    let answer: (response: Response) => void = () => {};
+    vi.stubGlobal("fetch", (() => new Promise<Response>((resolve) => (answer = resolve))) as unknown as Fetch);
+    const el = create({ src: "/sequence/manifest.json" });
+    el.style.setProperty("--sf-scroll-length", "630vh");
+    document.body.append(el);
+    expect(el.style.getPropertyValue("--sf-scroll-length")).toBe("630vh");
+    answer(jsonResponse({ ...manifest, scrollLength: "900vh" }));
+    await vi.waitFor(() => expect(el.style.getPropertyValue("--sf-scroll-length")).toBe("900vh"));
+  });
+
+  it("goes back to the default for a manifest without a length", async () => {
+    vi.stubGlobal("fetch", (async () => jsonResponse(manifest)) as unknown as Fetch);
+    const el = create({ src: "/sequence/manifest.json" });
+    el.style.setProperty("--sf-scroll-length", "630vh");
+    document.body.append(el);
+    await vi.waitFor(() => expect(engines).toHaveLength(1));
+    expect(el.style.getPropertyValue("--sf-scroll-length")).toBe("");
+  });
+});

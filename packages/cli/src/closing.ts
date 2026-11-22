@@ -24,8 +24,8 @@ export function retryCommand(
     // What was given is repeated even when it equals a fallback: it stops the video deciding.
     if (!auto.frames) args.push("--frames", String(options.frames));
     // With --widths the quality is not the video's either; it only needs repeating when it differs.
-    const qualityGiven = !auto.quality && (auto.sets || options.quality !== DEFAULT_QUALITY);
-    if (qualityGiven) args.push("--quality", String(options.quality));
+    const repeatQuality = !auto.quality && (auto.sets || options.quality !== DEFAULT_QUALITY);
+    if (repeatQuality) args.push("--quality", String(options.quality));
     if (!auto.sets) args.push("--widths", widths);
   } else {
     if (options.frames !== DEFAULT_FRAMES) args.push("--frames", String(options.frames));

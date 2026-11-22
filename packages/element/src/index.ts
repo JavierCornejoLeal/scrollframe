@@ -173,8 +173,10 @@ export class ScrollSequenceElement extends Base {
 
   #mount(manifest: SequenceManifest): void {
     const baseUrl = this.getAttribute("base-url") ?? undefined;
-    if (manifest.scrollLength && !this.getAttribute("scroll-length")) {
-      this.style.setProperty("--sf-scroll-length", manifest.scrollLength);
+    if (!this.getAttribute("scroll-length")) {
+      // The manifest's length, or the default for a sequence without one.
+      if (manifest.scrollLength) this.style.setProperty("--sf-scroll-length", manifest.scrollLength);
+      else this.style.removeProperty("--sf-scroll-length");
     }
     const stage = this.#ensureStage();
     this.#renderPoster(
@@ -236,10 +238,13 @@ export class ScrollSequenceElement extends Base {
     return canvas;
   }
 
+  /**
+   * The attribute wins. Without it, the length the page wrote (the generated snippets do) stays
+   * until the manifest arrives, so the page does not jump while it loads.
+   */
   #applyScrollLength(): void {
     const length = this.getAttribute("scroll-length");
     if (length) this.style.setProperty("--sf-scroll-length", length);
-    else this.style.removeProperty("--sf-scroll-length");
   }
 
   #fail(error: unknown): void {
