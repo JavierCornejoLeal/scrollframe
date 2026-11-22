@@ -6,9 +6,9 @@ import type { Framework } from "./detect.js";
 export const HELP = `Usage: scrollframe <video> [options]
 
 Extracts optimized WebP frames (mobile, tablet, desktop) and a manifest.json.
-In a terminal it also detects your project (Next.js, React, Angular, Vue or
-plain HTML), shows a plan, and after one confirmation installs the matching
-scrollframe package and writes a ready-to-use component.
+In a terminal it also suggests how to set up your project (Next.js, React,
+Angular, Vue or plain HTML): you confirm or correct the framework, the folder
+and the URL, and it installs the package and writes the component.
 
 Options:
   -o, --out <dir>         Output folder (default: public/sequence)
@@ -19,8 +19,8 @@ Options:
       --lossless          Lossless WebP (much heavier, hurts LCP; not recommended)
       --ffmpeg <path>     ffmpeg binary (default: FFMPEG_PATH, bundled ffmpeg-static, then PATH)
       --force             Overwrite a non-empty output folder
-  -y, --yes               Do not ask; set up the project (also without a terminal)
-      --framework <name>  Skip detection: next, react, angular, vue or html
+  -y, --yes               Do not ask: only frames, or set up with --framework, -o and --base-url
+      --framework <name>  next, react, angular, vue or html (instead of the suggestion)
       --name <Name>       Component name (default: from the video, e.g. HeroSequence)
       --no-install        Do not install the scrollframe package
   -h, --help              Show this help

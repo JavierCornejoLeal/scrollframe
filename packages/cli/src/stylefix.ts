@@ -1,6 +1,6 @@
-import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Framework, ProjectInfo } from "./detect.js";
+import { readText } from "./files.js";
 
 /** A planned change to a file of the user's project, applied only if the file is still `before`. */
 export interface FileEdit {
@@ -54,13 +54,9 @@ export function fixStickyOverflow(css: string): string | null {
 
 export function planOverflowFixes(project: ProjectInfo, framework: Framework): FileEdit[] {
   const path = globalStylesheet(project, framework);
-  if (!path || !existsSync(join(project.root, path))) return [];
-  let before: string;
-  try {
-    before = readFileSync(join(project.root, path), "utf8");
-  } catch {
-    return []; // unreadable (e.g. a folder at that path): plan without this step
-  }
+  if (!path) return [];
+  const before = readText(join(project.root, path));
+  if (before === null) return []; // missing or unreadable (e.g. a folder at that path): plan without this step
   const after = fixStickyOverflow(before);
   if (after === null) return [];
   return [

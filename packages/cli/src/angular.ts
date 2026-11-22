@@ -1,9 +1,9 @@
-import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { ProjectInfo } from "./detect.js";
+import { readText } from "./files.js";
 import type { FileEdit } from "./stylefix.js";
 
-const STYLESHEET = "@scrollframe/element/style.css";
+export const STYLESHEET = "@scrollframe/element/style.css";
 const ADD_BY_HAND = `add "${STYLESHEET}" to "styles" yourself.`;
 
 interface AngularJson {
@@ -29,12 +29,12 @@ export function planAngularStyles(project: ProjectInfo): { edit: FileEdit | null
   let before: string;
   let json: AngularJson;
   try {
-    before = readFileSync(join(project.root, path), "utf8");
+    before = readText(join(project.root, path)) ?? "";
     json = JSON.parse(before) as AngularJson;
   } catch {
     return { edit: null, note: `Could not read ${path}: ${ADD_BY_HAND}` };
   }
-  const options = Object.values(json.projects ?? {})[0]?.architect?.build?.options;
+  const options = Object.values(json?.projects ?? {})[0]?.architect?.build?.options;
   if (!options || (options.styles !== undefined && !Array.isArray(options.styles))) {
     return { edit: null, note: `Could not find the build styles in ${path}: ${ADD_BY_HAND}` };
   }

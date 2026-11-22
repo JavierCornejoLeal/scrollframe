@@ -1,17 +1,24 @@
-import { existsSync, readFileSync, statSync } from "node:fs";
+import { existsSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { UsageError } from "./options.js";
+import { readText } from "./files.js";
+import { printable } from "./printable.js";
+import { nameUnrecognised, suggest, type Manifest } from "./recognise.js";
 
-/** Frameworks the CLI writes a component for. `html` is any page without a supported framework. */
+/** Frameworks the CLI writes a component for. `html` is a folder of static pages. */
 export type Framework = "next" | "react" | "angular" | "vue" | "html";
 export type PackageManager = "pnpm" | "yarn" | "bun" | "npm";
 
 export interface ProjectInfo {
   root: string;
-  /** null when the project uses a framework the CLI does not support yet (see `unsupported`). */
+  /** What the project looks like: a suggestion to confirm. null when there is none. */
   framework: Framework | null;
-  /** Display name of a recognised but unsupported framework, e.g. "Svelte". */
+  /** Display name of a framework without a template, e.g. "Svelte"; null otherwise. */
   unsupported: string | null;
+  /** What to check before confirming the suggestion; empty for a standard project. */
+  doubts?: string[];
+  /** A doubt is about where files are served: no URL is suggested. */
+  urlUnknown?: boolean;
   /** Next.js only: which router the project uses. */
   router: "app" | "pages" | null;
   /** The project keeps its sources under `src/`. */
@@ -22,19 +29,9 @@ export interface ProjectInfo {
   hasPackageJson: boolean;
   /** Names of every dependency and devDependency. */
   dependencies: string[];
-  /** Folder served at the site root (`public`), or null when there is none. */
+  /** Folder served at the site root (`public`, or `static` for some stacks), or null when there is none. */
   publicDir: string | null;
 }
-
-/** Checked before React and Vue: these meta-frameworks also depend on them but lay files out differently. */
-const UNSUPPORTED: [dependency: string, name: string][] = [
-  ["nuxt", "Nuxt"],
-  ["@remix-run/react", "Remix"],
-  ["@sveltejs/kit", "SvelteKit"],
-  ["svelte", "Svelte"],
-  ["astro", "Astro"],
-  ["solid-js", "Solid"],
-];
 
 const LOCKFILES: [file: string, manager: PackageManager][] = [
   ["pnpm-lock.yaml", "pnpm"],
@@ -44,10 +41,8 @@ const LOCKFILES: [file: string, manager: PackageManager][] = [
   ["package-lock.json", "npm"],
 ];
 
-interface PackageJson {
-  dependencies?: Record<string, string>;
-  devDependencies?: Record<string, string>;
-  packageManager?: string;
+interface PackageJson extends Manifest {
+  packageManager?: unknown;
 }
 
 const isDir = (path: string) => existsSync(path) && statSync(path).isDirectory();
@@ -55,24 +50,15 @@ const isDir = (path: string) => existsSync(path) && statSync(path).isDirectory()
 function readPackageJson(root: string): PackageJson | null {
   const path = join(root, "package.json");
   if (!existsSync(path)) return null;
+  const text = readText(path);
+  if (text === null) throw new UsageError(`Could not read ${printable(path, Infinity)}: it is not a readable file.`);
   try {
-    return JSON.parse(readFileSync(path, "utf8")) as PackageJson;
+    const json: unknown = JSON.parse(text);
+    if (typeof json !== "object" || json === null) throw new Error("not a JSON object");
+    return json as PackageJson;
   } catch (error) {
-    throw new UsageError(`Could not read ${path}: ${(error as Error).message}`);
+    throw new UsageError(`Could not read ${printable(path, Infinity)}: ${printable((error as Error).message, Infinity)}`);
   }
-}
-
-function detectFramework(root: string, deps: Record<string, string>): Pick<ProjectInfo, "framework" | "unsupported" | "router"> {
-  const unsupported = UNSUPPORTED.find(([dependency]) => dependency in deps);
-  if (unsupported) return { framework: null, unsupported: unsupported[1], router: null };
-  if ("next" in deps) {
-    const app = isDir(join(root, "app")) || isDir(join(root, "src/app"));
-    return { framework: "next", unsupported: null, router: app ? "app" : "pages" };
-  }
-  if ("@angular/core" in deps) return { framework: "angular", unsupported: null, router: null };
-  if ("vue" in deps) return { framework: "vue", unsupported: null, router: null };
-  if ("react" in deps) return { framework: "react", unsupported: null, router: null };
-  return { framework: "html", unsupported: null, router: null };
 }
 
 function detectPackageManager(root: string, pkg: PackageJson | null): PackageManager | null {
@@ -85,14 +71,20 @@ function detectPackageManager(root: string, pkg: PackageJson | null): PackageMan
 export function detectProject(root: string): ProjectInfo {
   const pkg = readPackageJson(root);
   const deps = { ...pkg?.dependencies, ...pkg?.devDependencies };
+  const found = suggest(root, pkg);
+  const named = found.framework === null ? nameUnrecognised(root, deps) : null;
   return {
     root,
-    ...detectFramework(root, deps),
+    framework: found.framework,
+    unsupported: named?.name ?? null,
+    doubts: found.doubts,
+    urlUnknown: found.urlUnknown,
+    router: found.router,
     srcDir: isDir(join(root, "src")),
     typescript: existsSync(join(root, "tsconfig.json")) || "typescript" in deps,
     packageManager: detectPackageManager(root, pkg),
     hasPackageJson: pkg !== null,
     dependencies: Object.keys(deps),
-    publicDir: isDir(join(root, "public")) ? "public" : null,
+    publicDir: named?.staticDir ?? (isDir(join(root, "public")) ? "public" : null),
   };
 }
