@@ -1,5 +1,5 @@
-import { spawn } from "node:child_process";
-import { existsSync } from "node:fs";
+import { spawn, type ChildProcess } from "node:child_process";
+import { existsSync, rmSync } from "node:fs";
 import { copyFile, mkdir, mkdtemp, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { availableParallelism } from "node:os";
@@ -161,6 +161,26 @@ interface RawFrame {
 }
 
 /** Splits ffmpeg's stream of PPM images: each is `P6 <width> <height> 255` and then its RGB bytes. */
+const INTERRUPTS = ["SIGINT", "SIGTERM", "SIGHUP"] as const;
+
+/** A `finally` does not run on a signal: this removes what was half-done, then lets the signal act. */
+function cleanUpOnInterrupt(staging: string, child: () => ChildProcess | null): () => void {
+  const stop = () => {
+    for (const signal of INTERRUPTS) process.off(signal, interrupt);
+  };
+  const interrupt = (signal: NodeJS.Signals) => {
+    stop();
+    child()?.kill();
+    try {
+      rmSync(staging, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+    } finally {
+      process.kill(process.pid, signal);
+    }
+  };
+  for (const signal of INTERRUPTS) process.on(signal, interrupt);
+  return stop;
+}
+
 async function* readPpm(stream: AsyncIterable<Buffer>): AsyncGenerator<RawFrame> {
   let header = Buffer.alloc(0);
   let frame: RawFrame | null = null;
@@ -223,6 +243,8 @@ export async function generateSequence(options: GenerateOptions, log: Log = () =
   await mkdir(options.out, { recursive: true });
   // Everything is written here first, so a failure never leaves a half-replaced sequence.
   const staging = await mkdtemp(join(options.out, ".scrollframe-new-"));
+  let extracting: ChildProcess | null = null;
+  const stopCleanUp = cleanUpOnInterrupt(staging, () => extracting);
 
   try {
     const adaptive = options.auto?.sets === true;
@@ -245,6 +267,7 @@ export async function generateSequence(options: GenerateOptions, log: Log = () =
       ],
       { stdio: ["ignore", "pipe", "pipe"] },
     );
+    extracting = child;
     let stderr = "";
     child.stderr.on("data", (chunk: Buffer) => (stderr += chunk.toString()));
     const exited = new Promise<number>((resolve) => {
@@ -324,9 +347,11 @@ export async function generateSequence(options: GenerateOptions, log: Log = () =
       ...(adaptive ? { scrollLength: scrollLengthFor(duration) } : {}),
     };
     await writeFile(join(staging, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`);
+    stopCleanUp(); // the swap restores on its own, and needs staging until it ends
     await swapIntoPlace(options.out, staging, previous);
     return { manifest, manifestPath: join(options.out, "manifest.json"), bytesBySet };
   } finally {
+    stopCleanUp();
     await rm(staging, { recursive: true, force: true });
   }
 }
