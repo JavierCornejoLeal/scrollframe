@@ -8,10 +8,18 @@ Branch: `feat/more-stacks` · Baseline: `9587ac1` (0.3.0, published) · Delivery
 - S1: "vamos a intentar confirmar y verfiicar que podamos trabajr y usar dentro de wordprees, PHP, astro, todos los frameworks conocidos que nos falten por implementar, paso a paso"
 - S2 (assumption): a stack is listed as supported only after: real project, CLI end to end, production build or real server, frame URLs return 200, pinned sequence in three browser engines.
 - S3 (assumption): an existing user file is never overwritten; build output folders are never used for frames.
+- S4 (owner approved, 2026-11-22: "Si, lo aprubeo"): detection suggests, it does not authorize.
+  - A1: in a terminal the plan shows framework, frames folder and serving URL; y = set up, e = correct, n = frames only, Ctrl+C/Ctrl+D = change nothing.
+  - A2: Enter means yes only for a standard project without doubts; otherwise an explicit answer is needed. An unknown project is asked for its framework; an unknown URL must be typed.
+  - A3: bare `--yes` generates frames only and says so; unattended set-up needs `--framework`, `-o` and `--base-url`; a partial set stops with exit 2 before any change.
+  - A4: the last line comes from what happened and never claims delivery: it names the poster and frame URLs to open. An incomplete set-up exits 1.
+  - A5: every printed retry works as written; generated imports and URLs are asserted.
+  - A6: every case of the three Codex passes is an acceptance test; asset contracts are checked with real builds and servers (poster and frame return an image).
+  - A7: one final Codex pass limited to S4; minor leftovers become issues.
 
 ## Tasks
 
-- [ ] T0 (S2, S3) stop wrong successes in 0.3.0: set up only positively recognised projects (reopened, see L11)
+- [ ] T0 (S2, S3, S4) stop wrong successes in 0.3.0: detection suggests, the person decides; release 0.4.0 (see L11, L15-L17)
 - [ ] T1 (S1) PHP: document root and subfolder
 - [ ] T2 (S1) WordPress: classic theme, block theme, install in a subfolder
 - [ ] T3 (S1) Astro
@@ -41,3 +49,6 @@ Branch: `feat/more-stacks` · Baseline: `9587ac1` (0.3.0, published) · Delivery
 - L12 (2026-11-22): "Si, dale rehazlo y pásalo otra vez por codex". Decision: set up only what is positively recognised; everything else gets frames only and says so; --framework forces it. A new Codex review runs before any PR is proposed.
 - L13 (2026-11-22): T0 redone: `recognise.ts` sets up only positively recognised projects (Next with app/pages and no basePath; Vite + React or Vue plugin + root index.html with default base/root/publicDir; one Angular app serving public/ at /; static pages with no server code and no enclosing project); `stacks.ts` removed, names never decide. URLs come from the served folder; project files are read only when regular; exported API compatible with 0.3.0. RED 54 failures. vitest 320/320, typecheck, CLI e2e 15/15, publint 4/4, attw ok; 10 mutations caught (the FIFO one by hanging).
 - L14 (2026-11-22): packed CLI: 21/21 real cases not set up; 5 controls write identical files (output identical except the HTML site-root note, non-interactive identical); the 14 review cases as expected (Quasar builds, -o media/hero 200, 0.3.0 type consumer compiles); holdout of 13 fresh official templates as expected (create-vite 9 no longer has react-swc-ts and produced vanilla; create-hono did not run); Next src/ JS, Next Pages Router, Vite React JS and SWC build for production. Windows not run. Awaiting the second Codex review: T0 stays open until it is triaged.
+- L15 (2026-11-22): second Codex review of b8c2cf0: fix first; 5 major + 2 minor, all reproduced, plus five found while verifying (nested Vitest root, trailing comment, spread base, React Router + index.html, retry without --force). b8c2cf0 is not releasable.
+- L16 (2026-11-22): "Verificalo con codex": the proposed design (plugin import as identity, warn on suspect paths) was refuted and the refutation reproduced: inactive plugin imports, re-exported config, /docs/ base (poster 404), publicDir (frames not in the build). Codex design: detection suggests; unattended set-up needs explicit inputs.
+- L17 (2026-11-22): "Si, lo aprubeo": S4 approved, including bare --yes = frames only and Enter as yes only without doubts; release 0.4.0.
