@@ -5,7 +5,7 @@ import type { Framework, PackageManager, ProjectInfo } from "./detect.js";
 import { deriveBaseUrl, type GenerateOptions, type ScaffoldFlags } from "./options.js";
 // Inlined at build time, after versioning: the CLI and the element are not always released together.
 import { version as ELEMENT_VERSION } from "../../element/package.json";
-import { planAngularStyles } from "./angular.js";
+import { STYLESHEET, planAngularStyles } from "./angular.js";
 import { planOverflowFixes, type FileEdit } from "./stylefix.js";
 import { componentFor, type ComponentFile } from "./templates.js";
 
@@ -66,6 +66,8 @@ export interface ScaffoldPlan {
   /** Changes to the user's stylesheets that keep the sequence pinned (see stylefix.ts). */
   edits: FileEdit[];
   notes: string[];
+  /** Steps only the person can take: until they are done the set-up is incomplete. */
+  todo?: string[];
 }
 
 /** `out` relative to `dir` (both resolved in the project root) with "/", or null when it is not inside it. */
@@ -79,13 +81,18 @@ const toUrl = (path: string) => `/${path.split("/").map(encodeURIComponent).join
 
 /**
  * A URL safe in generated code, markup and srcset (no quotes, spaces or commas), without its final
- * slash: `/path` or `http(s)://host/path`. null when it is not one.
+ * slash: `/path`, `./path`, `../path` or `http(s)://host/path`. null when it is not one.
  */
 export function servingUrl(value: string): string | null {
   const url = value.trim().replace(/\/+$/, "");
   // Anything else a URL can hold is accepted, e.g. /imágenes or /hero(1); `&` is escaped in markup.
   const safe = /^[^\s\p{Cc}\p{Cf}"'`<>{}\\,?#|^]+$/u.test(url);
-  return safe && /^(?:\/(?!\/)|https?:\/\/[^/])/.test(url) ? url : null;
+  return safe && /^(?:\/(?!\/)|https?:\/\/[^/]|\.\.?(?:\/|$))/.test(url) ? url : null;
+}
+
+/** The same for --base-url, where `sequence` is also a path, as in 0.3.0. (Typed, it would be a typo.) */
+export function flagUrl(value: string): string | null {
+  return servingUrl(value) ?? (/^[^/:.][^:]*$/.test(value) ? servingUrl(`./${value}`) : null);
 }
 
 /** The plan for what is known so far: the suggestion, replaced by whatever the flags (or answers) set. */
@@ -102,8 +109,8 @@ export function planScaffold(project: ProjectInfo, generate: GenerateOptions, fl
 
   let url: string | null = null;
   if (flags.baseUrlGiven) {
-    url = servingUrl(generate.baseUrl);
-  } else if (framework !== null) {
+    url = flagUrl(generate.baseUrl);
+  } else if (framework !== null && !project.urlUnknown) {
     // The folder each template expects at the site root; an HTML page that was not detected may have a public/.
     let served = framework === "html" ? "." : "public";
     if (!detected && framework === "html" && pathInside(project.root, "public", out) !== null) served = "public";
@@ -150,17 +157,21 @@ export function planScaffold(project: ProjectInfo, generate: GenerateOptions, fl
   }
 
   const edits = planOverflowFixes(project, framework);
+  const todo: string[] = [];
   if (framework === "angular") {
     const { edit, note } = planAngularStyles(project);
     if (edit) edits.unshift(edit);
-    if (note) notes.push(note);
+    if (note) {
+      notes.push(note);
+      todo.push(`angular.json still needs "${STYLESHEET}" in "styles"`);
+    }
   }
-  return { project, framework, generate: options, url, doubts, install, component, existing, edits, notes };
+  return { project, framework, generate: options, url, doubts, install, component, existing, edits, notes, todo };
 }
 
 /** The same plan without the set-up. */
 export function withoutSetup(plan: ScaffoldPlan): ScaffoldPlan {
-  return { ...plan, framework: null, install: null, component: null, existing: null, edits: [], notes: [], doubts: [] };
+  return { ...plan, framework: null, install: null, component: null, existing: null, edits: [], notes: [], doubts: [], todo: [] };
 }
 
 export function describeProject(project: ProjectInfo, framework: Framework | null): string {
@@ -191,7 +202,8 @@ export function formatPlan(plan: ScaffoldPlan): string {
   const folder = `${plan.generate.out.replace(/[\\/]+$/, "")}/`;
   const lines: string[] = [];
   if (project) lines.push(describeProject(project, framework ?? project.framework));
-  if (framework) lines.push(`  Frames in:  ${folder}`, `  Served at:  ${plan.url ?? "unknown"}`);
+  // An unknown project has no suggested URL, so one that is there was given.
+  if (framework || (plan.url && !project?.framework)) lines.push(`  Frames in:  ${folder}`, `  Served at:  ${plan.url ?? "unknown"}`);
   if (project) lines.push("");
 
   const steps = [`Generate ${plan.generate.frames} frames in ${folder}`];

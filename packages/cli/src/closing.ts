@@ -27,7 +27,9 @@ export function retryCommand(
   if (!flags.install) args.push("--no-install");
   if (setUp) args.push("--yes", "--framework", setUp.framework);
   else if (flags.framework) args.push("--framework", flags.framework);
-  args.push("-o", options.out);
+  // A value that starts with "-" would be read as an option.
+  if (options.out.startsWith("-")) args.push(`--out=${options.out}`);
+  else args.push("-o", options.out);
   if (setUp) args.push("--base-url", setUp.url);
   else if (flags.baseUrlGiven) args.push("--base-url", options.baseUrl);
 

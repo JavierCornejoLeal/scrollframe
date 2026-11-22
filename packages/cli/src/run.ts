@@ -9,7 +9,7 @@ import { spawnCommand } from "./install.js";
 import { createPrompter } from "./prompt.js";
 import type { SequenceManifest } from "@scrollframe/core";
 import { HELP, UsageError, parseCommandLine, type GenerateOptions, type ScaffoldFlags } from "./options.js";
-import { formatPlan, framesOnlyPlan, planScaffold, servingUrl, setupHint, withoutSetup, type ScaffoldPlan } from "./scaffold.js";
+import { flagUrl, formatPlan, framesOnlyPlan, planScaffold, setupHint, withoutSetup, type ScaffoldPlan } from "./scaffold.js";
 
 export interface CliIO {
   stdout: { write(chunk: string): unknown; isTTY?: boolean };
@@ -113,7 +113,7 @@ export async function runCli(argv: string[], io: CliIO, overrides: Partial<RunDe
   const write = (text: string) => io.stdout.write(text);
 
   // --yes sets up only with the three values: a guess is not a consent.
-  if (flags.yes && setupFlag) {
+  if (flags.yes && (setupFlag || flags.outGiven || flags.baseUrlGiven)) {
     const missing: string[] = [];
     if (!flags.framework) missing.push("--framework");
     if (!flags.outGiven) missing.push("-o");
@@ -121,13 +121,16 @@ export async function runCli(argv: string[], io: CliIO, overrides: Partial<RunDe
     if (missing.length > 0) {
       const list = missing.length === 1 ? missing[0] : `${missing.slice(0, -1).join(", ")} and ${missing.at(-1)}`;
       io.stderr.write(`Setting up with --yes also needs ${list}. Nothing was changed.\n`);
+      if (!setupFlag) {
+        io.stderr.write("For only the frames, leave out -o and --base-url, or leave out --yes (in a terminal, answer n).\n");
+      }
       return 2;
     }
   }
   const mightSetUp = flags.yes ? flags.framework !== undefined : true;
-  if (mightSetUp && flags.baseUrlGiven && servingUrl(options.baseUrl) === null) {
+  if (mightSetUp && flags.baseUrlGiven && flagUrl(options.baseUrl) === null) {
     io.stderr.write(
-      `--base-url must be /path or https://host/path, without spaces, commas or quotes, to set up the project (got "${options.baseUrl}"). Nothing was changed.\n`,
+      `--base-url must be /path, ./path or https://host/path, without spaces, commas or quotes, to set up the project (got "${options.baseUrl}"). Nothing was changed.\n`,
     );
     return 2;
   }
@@ -135,7 +138,10 @@ export async function runCli(argv: string[], io: CliIO, overrides: Partial<RunDe
   let project: ProjectInfo | null = null;
   let unreadable = "";
   try {
-    project = deps.detect(deps.cwd);
+    const detected = deps.detect(deps.cwd);
+    // As in 0.3.0: a project that cannot be planned is treated like one that cannot be read.
+    planScaffold(detected, options, flags);
+    project = detected;
   } catch (error) {
     unreadable = (error as Error).message;
     // Explicit set-up options cannot apply to a project that cannot be read: refuse, do not drop them.
@@ -274,6 +280,7 @@ async function execute(plan: ScaffoldPlan, invocation: Invocation): Promise<numb
     }
   }
 
+  failed.push(...(plan.todo ?? []));
   write("\n");
   if (failed.length > 0) {
     write(`Set-up incomplete: ${failed.join(", ")}.\n`);

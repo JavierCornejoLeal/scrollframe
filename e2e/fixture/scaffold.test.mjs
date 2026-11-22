@@ -154,3 +154,41 @@ test("React: installs @scrollframe/react for real with npm (the Windows shell pa
   assert.ok(existsSync(join(root, "node_modules/@scrollframe/react/package.json")));
   assert.ok(existsSync(join(root, "src/components/HeroSequence.jsx")));
 });
+
+// A6: what the CLI prints at the end is true in a real build behind a real server.
+for (const { name, option, out, url, wrong } of [
+  { name: "standard", option: "", out: "public/sequence", url: "/sequence" },
+  { name: "base", option: 'base: "/docs/",', out: "public/sequence", url: "/docs/sequence", wrong: "/sequence" },
+  { name: "publicDir", option: 'publicDir: "static",', out: "static/sequence", url: "/sequence" },
+]) {
+  test(`React + Vite, ${name}: builds, and the printed poster and frame URLs return images`, { timeout: 120_000 }, async (t) => {
+    // Inside the consumer project, so the build resolves the installed packages.
+    const root = mkdtempSync(join(import.meta.dirname, ".scaffold-build-"));
+    t.after(() => rmSync(root, { recursive: true, force: true }));
+    copyFileSync(VIDEO, join(root, "hero.mp4"));
+    mkdirSync(join(root, "src"));
+    writeFileSync(join(root, "package.json"), JSON.stringify({ private: true, type: "module", dependencies: { react: "*", "react-dom": "*", vite: "*", "@vitejs/plugin-react": "*", "@scrollframe/react": "*" } }));
+    writeFileSync(join(root, "vite.config.js"), `import react from "@vitejs/plugin-react";\nexport default { plugins: [react()], ${option} };\n`);
+    writeFileSync(join(root, "index.html"), '<!doctype html><html><body><div id="root"></div><script type="module" src="/src/main.jsx"></script></body></html>');
+    writeFileSync(join(root, "src/main.jsx"), 'import { createRoot } from "react-dom/client";\nimport Hero from "./components/HeroSequence.jsx";\ncreateRoot(document.getElementById("root")).render(<Hero />);\n');
+
+    const { code, stdout, stderr } = cli(root, ["--yes", "--framework", "react", "-o", out, "--base-url", url]);
+    assert.equal(code, 0, stderr);
+    const printed = stdout.trimEnd().split("\n").at(-1).match(/\/[^\s,]+\.webp/g);
+    assert.equal(printed?.length, 2, stdout);
+
+    const { build, preview } = await import("vite");
+    await build({ root, logLevel: "silent" });
+    const server = await preview({ root, logLevel: "silent", preview: { host: "127.0.0.1", port: 4300, strictPort: false } });
+    t.after(() => new Promise((done) => server.httpServer.close(done)));
+    const origin = `http://127.0.0.1:${server.httpServer.address().port}`;
+    const isImage = async (path) => {
+      // No keep-alive, so the server closes when the test ends.
+      const response = await fetch(origin + path, { headers: { connection: "close" } });
+      const body = Buffer.from(await response.arrayBuffer());
+      return response.status === 200 && body.toString("latin1", 8, 12) === "WEBP";
+    };
+    for (const path of printed) assert.ok(await isImage(path), `${path} is not an image`);
+    if (wrong) assert.equal(await isImage(`${wrong}/desktop/poster.webp`), false);
+  });
+}

@@ -16,6 +16,8 @@ export interface ProjectInfo {
   unsupported: string | null;
   /** What to check before confirming the suggestion; empty for a standard project. */
   doubts?: string[];
+  /** A doubt is about where files are served: no URL is suggested. */
+  urlUnknown?: boolean;
   /** Next.js only: which router the project uses. */
   router: "app" | "pages" | null;
   /** The project keeps its sources under `src/`. */
@@ -75,6 +77,7 @@ export function detectProject(root: string): ProjectInfo {
     framework: found.framework,
     unsupported: named?.name ?? null,
     doubts: found.doubts,
+    urlUnknown: found.urlUnknown,
     router: found.router,
     srcDir: isDir(join(root, "src")),
     typescript: existsSync(join(root, "tsconfig.json")) || "typescript" in deps,

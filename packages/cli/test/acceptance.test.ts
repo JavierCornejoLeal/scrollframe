@@ -356,6 +356,7 @@ describe("A3: --yes", () => {
     [["--framework", "next", "--base-url", "/s"], "-o"],
     [["--name", "Intro"], "--framework, -o and --base-url"],
     [["--no-install"], "--framework, -o and --base-url"],
+    [["--framework", "next", "-o", "public/s", "--name", "Intro"], "--base-url"],
   ])("%j is incomplete: exit 2 before any change", async (flags, missing) => {
     const { code, stderr, options } = await run(project(next()), null, ["--yes", ...flags]);
     expect(code).toBe(2);
@@ -395,7 +396,8 @@ describe("the URL and the import", () => {
     ["angular", "src/app/hero-sequence/hero-sequence.ts"],
     ["vue", "src/components/HeroSequence.vue"],
   ])("escapes & in the markup written for %s", async (framework, file) => {
-    const root = project({});
+    // With the stylesheet in place, so that the set-up is complete for Angular too.
+    const root = project(framework === "angular" ? angular({ assets: [PUBLIC], styles: ["@scrollframe/element/style.css"] }) : {});
     expect((await run(root, null, EXPLICIT(framework, "public/s", "/a&copy"))).code).toBe(0);
     expect(readFileSync(join(root, file), "utf8")).toContain('src="/a&amp;copy/manifest.json"');
   });
@@ -528,8 +530,14 @@ describe("A5: the printed retry works as written", () => {
     expect(argv).not.toContain("--yes");
   });
 
+  it("nor does a doubt that leaves the URL known", async () => {
+    const root = project({ ...next(), "next.config.mjs": 'import wrap from "./wrap.mjs";\nexport default wrap({});' });
+    const [, ...argv] = retry((await run(root, null, ["--yes"])).stdout);
+    expect(argv).not.toContain("--yes");
+  });
+
   it("does not print a command it cannot quote", async () => {
-    const { stdout } = await run(project(next()), null, ["--yes", "-o", "public/$HOME"]);
+    const { stdout } = await run(project(next()), ["n"], ["-o", "public/$HOME"]);
     expect(stdout).not.toContain("  npx @scrollframe/cli ");
     expect(stdout).toContain("run the same command again in a terminal, without --yes and with --force");
   });
@@ -628,5 +636,137 @@ describe("RunDeps.confirm from 0.3.0 still works, without authorizing a guess", 
     expect(code).toBe(expected);
     expect(generated).toBe(answer);
     expect(commands.length > 0).toBe(installs);
+  });
+});
+
+describe("the last Codex pass on S4", () => {
+  const OK_ANGULAR = { projects: { app: { root: "", architect: { build: { options: { assets: [{ glob: "**/*", input: "public" }], styles: [] } } } } } };
+  const brokenAngular = { ...pkg(["@angular/core"]), "src/": "", "angular.json": "null" };
+  const URL_PROMPT = "URL where that folder is served: ";
+
+  it("5: angular.json holding null does not stop bare --yes", async () => {
+    const { code, options, last } = await run(project(brokenAngular), null, ["--yes"]);
+    expect(code).toBe(0);
+    expect(options).toBeDefined();
+    expect(last).toBe("Not set up: --yes alone only generates the frames.");
+  });
+
+  it("5: nor n in a terminal", async () => {
+    const { code, options } = await run(project(brokenAngular), ["n"]);
+    expect(code).toBe(0);
+    expect(options).toBeDefined();
+  });
+
+  it("5: nor choosing Angular for a project that was not recognised", async () => {
+    const root = project({ "angular.json": "null" });
+    expect((await run(root, ["angular", "n"])).code).toBe(0);
+  });
+
+  it.each([
+    [[] as string[], 0],
+    [["--framework", "next", "-o", "public/s", "--base-url", "/s"], 2],
+  ])("5: a project that cannot be planned is handled like an unreadable one: %j", async (flags, expected) => {
+    const root = project(next());
+    const silent = { write: () => true };
+    let generated = false;
+    const code = await runCli(["hero.mp4", "--yes", ...flags], { stdout: silent, stderr: silent }, {
+      cwd: root,
+      detect: () => ({ ...detectProject(root), dependencies: null as unknown as string[] }),
+      generate: async (given) => {
+        generated = true;
+        return {
+          manifestPath: `${given.out}/manifest.json`,
+          bytesBySet: {},
+          manifest: parseManifest({ version: 1, frameCount: 2, baseUrl: given.baseUrl, pattern: "frame-{index}.webp", padding: 4, poster: "poster.webp", sets: [{ name: "desktop", maxViewportWidth: null, width: 96, height: 54, dir: "desktop" }] }),
+        };
+      },
+    });
+    expect(code).toBe(expected);
+    expect(generated).toBe(expected === 0);
+  });
+
+  it.each<[string, Files]>([
+    ["Next basePath", { ...next(), "next.config.mjs": 'export default { basePath: "/docs" };' }],
+    ["Vite base", viteWith('base: "/docs/"')],
+    ["Vite root", viteWith('root: "site"')],
+    ["Vite publicDir", viteWith('publicDir: "static"')],
+    ["Vite --base in a script", { ...viteReact(), ...pkg(["vite", "react", "react-dom", "@vitejs/plugin-react"], { build: "vite build --base /docs/" }) }],
+    ["Angular assets", angular({ assets: [{ glob: "**/*", input: "public", output: "static" }] })],
+    ["Angular baseHref", angular({ assets: [{ glob: "**/*", input: "public" }], baseHref: "/docs/" })],
+    ["static site with a <base>", { "index.html": '<!doctype html><base href="/shop/">' }],
+  ])("6: %s: y cannot keep a guessed URL", async (_name, files) => {
+    const { questions, options, stdout } = await run(project(files), ["y", "", "/docs/sequence", "y"]);
+    expect(questions).toEqual([ASK_DOUBT, URL_PROMPT, URL_PROMPT, ASK_DOUBT]);
+    expect(stdout).toContain("Served at:  unknown");
+    expect(options!.baseUrl).toBe("/docs/sequence");
+  });
+
+  it("6: editing has no default URL there either", async () => {
+    const { questions } = await run(project(viteWith('base: "/docs/"')), ["e", "", ""]);
+    expect(questions.at(-1)).toBe(URL_PROMPT);
+  });
+
+  it("6: a doubt that is not about the URL still keeps it", async () => {
+    const { questions, options } = await run(project({ ...next(), "next.config.mjs": 'import wrap from "./wrap.mjs";\nexport default wrap({});' }), ["y"]);
+    expect(questions).toEqual([ASK_DOUBT]);
+    expect(options!.baseUrl).toBe("/sequence");
+  });
+
+  it.each([
+    [["-o", "frames"], "--framework and --base-url"],
+    [["--base-url", "/frames"], "--framework and -o"],
+    [["-o", "frames", "--base-url", "/frames"], "--framework"],
+  ])("7: --yes %j is a partial set", async (flags, missing) => {
+    const { code, stderr, options } = await run(project(next()), null, ["--yes", ...flags]);
+    expect(code).toBe(2);
+    expect(options).toBeUndefined();
+    expect(stderr).toBe(
+      `Setting up with --yes also needs ${missing}. Nothing was changed.\n` +
+        "For only the frames, leave out -o and --base-url, or leave out --yes (in a terminal, answer n).\n",
+    );
+  });
+
+  it.each([
+    ["./sequence", "./sequence"],
+    ["../sequence/", "../sequence"],
+    ["sequence", "./sequence"],
+  ])("8: --base-url %s works as in 0.3.0", async (given, url) => {
+    const { code, options, stdout } = await run(project({ "index.html": HTML }), ["y"], ["--base-url", given]);
+    expect(code).toBe(0);
+    expect(options!.baseUrl).toBe(url);
+    expect(stdout).toContain("Created hero-sequence.html");
+  });
+
+  it.each(["javascript:x", "data:x"])("8: --base-url %s is still refused", async (url) => {
+    expect((await run(project(next()), null, EXPLICIT("next", "public/s", url))).code).toBe(2);
+  });
+
+  it("9: a stylesheet left to add by hand is an incomplete set-up", async () => {
+    const root = project({ ...pkg(["@angular/core", "@scrollframe/element"]), "src/": "", "angular.json": JSON.stringify(OK_ANGULAR) });
+    const { code, stdout, last } = await run(root, null, EXPLICIT("angular"));
+    expect(code).toBe(1);
+    expect(stdout).toContain("Created");
+    expect(last).toBe('Set-up incomplete: angular.json still needs "@scrollframe/element/style.css" in "styles".');
+  });
+
+  it("9: and a stylesheet already there is a complete one", async () => {
+    const styled = JSON.parse(JSON.stringify(OK_ANGULAR));
+    styled.projects.app.architect.build.options.styles.push("@scrollframe/element/style.css");
+    const root = project({ ...pkg(["@angular/core", "@scrollframe/element"]), "src/": "", "angular.json": JSON.stringify(styled) });
+    expect((await run(root, null, EXPLICIT("angular"))).code).toBe(0);
+  });
+
+  it.each(["-frames", "-my frames"])("10: the retry for -o %s parses", async (out) => {
+    const { stdout } = await run(project({ "index.html": HTML }), ["n"], [`--out=${out}`]);
+    const line = stdout.split("\n").find((text) => text.startsWith("  npx @scrollframe/cli "))!;
+    const words = line.slice("  npx @scrollframe/cli ".length).match(/"[^"]*"|\S+/g)!.map((word) => word.replace(/^"|"$/g, ""));
+    const parsed = parseCommandLine(words);
+    if (parsed === "help") throw new Error("help");
+    expect(parsed.generate.out).toBe(out);
+  });
+
+  it("11: the plan of an unknown project shows the URL that was given", async () => {
+    const { stdout } = await run(project({}), ["n"], ["--base-url", "/media"]);
+    expect(stdout.split("Plan:")[0]).toContain("Served at:  /media");
   });
 });

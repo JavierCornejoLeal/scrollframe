@@ -88,12 +88,12 @@ Detection only suggests. The CLI cannot know for sure how your project serves fi
 | Plain HTML | a folder with an `index.html` page and no `package.json` | none (CDN) | `hero-sequence.html`: CDN lines and the block with the poster already rendered |
 
 - **Standard project:** press Enter.
-- **Anything unusual** (a base path, other plugins, server code, a subfolder): it says what to check and Enter is not enough. Answer `y`, or `e` to correct the framework, folder and URL.
+- **Anything unusual** (a base path, other plugins, server code, a subfolder): it says what to check and Enter is not enough. Answer `y`, or `e` to correct the framework, folder and URL. When the doubt is about where files are served, it suggests no URL: you type it.
 - **Any other project** (WordPress, PHP, other backends and meta-frameworks have no template of their own yet): it asks which template to use, or generates only the frames.
 
 The component is named after the video (`hero.mp4` → `HeroSequence`), and the CLI prints the exact import for your main page. It does not check that the frames are served: it ends with the poster and frame URLs for you to open.
 
-Without questions (CI, scripts), `--yes` only generates the frames. To set up, give it the three values:
+Without questions (CI, scripts), `--yes` only generates the frames. To set up, give it the three values (only some of them, also just `-o` or `--base-url`, is an error and changes nothing):
 
 ```bash
 npx @scrollframe/cli hero.mp4 --yes --framework react -o public/sequence --base-url /sequence

@@ -13,6 +13,8 @@ export interface Suggestion {
   framework: Framework | null;
   router: "app" | "pages" | null;
   doubts: string[];
+  /** A doubt is about where the site serves files, so a URL cannot be suggested: it has to be typed. */
+  urlUnknown?: boolean;
 }
 
 export interface Manifest {
@@ -58,6 +60,7 @@ function scriptWith(pkg: Manifest, flag: RegExp): string | null {
 
 function suggestNext(root: string): Suggestion {
   const doubts: string[] = [];
+  let urlUnknown = false;
   for (const file of ["next.config.js", "next.config.mjs", "next.config.cjs", "next.config.ts", "next.config.mts"]) {
     if (!existsSync(join(root, file))) continue;
     const config = readText(join(root, file));
@@ -65,14 +68,17 @@ function suggestNext(root: string): Suggestion {
       doubts.push(`${file} cannot be read`);
       continue;
     }
-    if (/\bbasePath\b/.test(config)) doubts.push(`${file} mentions basePath`);
+    if (/\bbasePath\b/.test(config)) {
+      doubts.push(`${file} mentions basePath`);
+      urlUnknown = true;
+    }
     doubts.push(...configDoubts(file, config, (from) => from === "next"));
   }
   let router: Suggestion["router"] = null;
   if (isDir(join(root, "app")) || isDir(join(root, "src/app"))) router = "app";
   else if (isDir(join(root, "pages")) || isDir(join(root, "src/pages"))) router = "pages";
   else doubts.push("there is no app/ or pages/ folder here");
-  return { framework: "next", router, doubts };
+  return { framework: "next", router, doubts, urlUnknown };
 }
 
 const REACT_PLUGINS = ["@vitejs/plugin-react", "@vitejs/plugin-react-swc"];
@@ -90,6 +96,7 @@ function suggestVite(root: string, pkg: Manifest, deps: Record<string, string>):
   if (!react && !vue) return null;
 
   const doubts: string[] = [];
+  let urlUnknown = false;
   // In the order Vite looks for them: it loads only the first.
   const files = ["js", "mjs", "ts", "cjs", "mts", "cts"].map((ext) => `vite.config.${ext}`).filter((name) => existsSync(join(root, name)));
   const file = files[0];
@@ -108,14 +115,20 @@ function suggestVite(root: string, pkg: Manifest, deps: Record<string, string>):
     doubts.push(...configDoubts(file, config, (from) => STARTER_IMPORTS.has(from) || from.startsWith("node:")));
     // Also in comments and nested options: asking costs a "y", guessing costs a broken page.
     for (const option of ["base", "root", "publicDir"]) {
-      if (new RegExp(`\\b${option}\\b`).test(config)) doubts.push(`${file} mentions ${option}`);
+      if (new RegExp(`\\b${option}\\b`).test(config)) {
+        doubts.push(`${file} mentions ${option}`);
+        urlUnknown = true;
+      }
     }
   }
   const script = scriptWith(pkg, /\bvite\b.*\s(?:--(?:base|root|config)(?=[=\s]|$)|-c\s)/);
-  if (script) doubts.push(`the "${script}" script passes options that can move the site`);
+  if (script) {
+    doubts.push(`the "${script}" script passes options that can move the site`);
+    urlUnknown = true;
+  }
 
   const framework = usesVue || (!usesReact && vue) ? "vue" : "react";
-  return { framework, router: null, doubts };
+  return { framework, router: null, doubts, urlUnknown };
 }
 
 interface AngularAsset {
@@ -172,7 +185,8 @@ function suggestAngular(root: string, pkg: Manifest): Suggestion {
   if (base && base !== "/") doubts.push("src/index.html sets another base href");
   const script = scriptWith(pkg, /--(?:base-href|baseHref)(?=[=\s]|$)/);
   if (script) doubts.push(`the "${script}" script sets --base-href`);
-  return { framework: "angular", router: null, doubts };
+  // Every Angular doubt is about what is copied or where it is served.
+  return { framework: "angular", router: null, doubts, urlUnknown: doubts.length > 0 };
 }
 
 /** Files that make a folder a program or a generated site, not a folder of static pages. */
@@ -221,7 +235,8 @@ function suggestHtml(root: string): Suggestion | null {
   const doubts: string[] = [];
   if (/\{%|<%|<\?php/.test(page)) doubts.push("index.html looks like a template");
   const base = baseHref(page);
-  if (base && base !== "/") doubts.push("index.html sets another base href");
+  let urlUnknown = Boolean(base && base !== "/");
+  if (urlUnknown) doubts.push("index.html sets another base href");
   const generator = nameUnrecognised(root, {});
   if (generator) doubts.push(`this looks like a ${generator.name} site`);
   try {
@@ -234,7 +249,8 @@ function suggestHtml(root: string): Suggestion | null {
   }
   const parent = enclosingProject(root);
   if (parent) doubts.push(`it is inside another project, which has ${parent}`);
-  return { framework: "html", router: null, doubts };
+  if (parent) urlUnknown = true;
+  return { framework: "html", router: null, doubts, urlUnknown };
 }
 
 /** What the project in `root` looks like, and what to check before trusting that. */
@@ -249,7 +265,10 @@ export function suggest(root: string, pkg: Manifest | null): Suggestion {
   else if ("vite" in deps) found = suggestVite(root, pkg, deps);
   if (!found) return none;
 
-  if ("electron" in deps) found.doubts.push("Electron pages are usually loaded from files, where /sequence does not exist");
+  if ("electron" in deps) {
+    found.doubts.push("Electron pages are usually loaded from files, where /sequence does not exist");
+    found.urlUnknown = true;
+  }
   if (existsSync(join(root, "artisan"))) found.doubts.push("Laravel serves the front end");
   return found;
 }

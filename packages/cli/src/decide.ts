@@ -5,7 +5,7 @@ import { formatPlan, planScaffold, servingUrl, withoutSetup, type ScaffoldPlan }
 type Ask = (question: string) => Promise<string | null>;
 
 const CHOICES = FRAMEWORKS.join(" / ");
-const URL_RULE = "Use /path or https://host/path, without spaces, commas or quotes.\n";
+const URL_RULE = "Use /path, ./path or https://host/path, without spaces, commas or quotes.\n";
 
 /**
  * Shows the suggestion and lets the person confirm it (y), correct it (e) or keep only the frames
