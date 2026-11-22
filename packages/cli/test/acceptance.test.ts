@@ -770,3 +770,54 @@ describe("the last Codex pass on S4", () => {
     expect(stdout.split("Plan:")[0]).toContain("Served at:  /media");
   });
 });
+
+describe("the last review of the fixes", () => {
+  const URL_PROMPT = "URL where that folder is served: ";
+
+  it.each([" ", "\t", "  \n"])("A: a blank --base-url %j is refused", async (url) => {
+    const { code, stderr, options } = await run(project(next()), null, EXPLICIT("next", "public/s", url));
+    expect(code).toBe(2);
+    expect(stderr).toContain("--base-url must be");
+    expect(options).toBeUndefined();
+  });
+
+  // A folder with that name is a config nobody can read, on every OS.
+  it.each<[string, Files]>([
+    ["Next", { ...next(), "next.config.mjs/": "" }],
+    ["Vite", { ...pkg(["vite", "react", "react-dom", "@vitejs/plugin-react"]), "index.html": HTML, "vite.config.ts/": "" }],
+  ])("B: an unreadable %s config leaves the URL to be typed", async (_name, files) => {
+    const { questions, options } = await run(project(files), ["y", "/docs/sequence", "y"]);
+    expect(questions).toEqual([ASK_DOUBT, URL_PROMPT, ASK_DOUBT]);
+    expect(options!.baseUrl).toBe("/docs/sequence");
+  });
+
+  it("E: an Electron app leaves the URL to be typed", async () => {
+    expect((await run(project(viteReact("electron")), ["y"])).questions).toEqual([ASK_DOUBT, URL_PROMPT]);
+  });
+
+  it("E: so does a folder inside another project", async () => {
+    const root = project({ "package.json": JSON.stringify({ name: "outer" }), "site/index.html": HTML });
+    expect((await run(join(root, "site"), ["y"])).questions).toEqual([ASK_DOUBT, URL_PROMPT]);
+  });
+
+  // ESC, C1 CSI, a line break, a bidi override and a line separator.
+  const HOSTILE = "x\u001b[2J\u009b2J\rPlan: nothing\u202e\u2028" + "a".repeat(300);
+  const UNSAFE = /(?!\n)[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u;
+  const NOT_WINDOWS = process.platform !== "win32"; // Windows has no such file names.
+
+  it.each<[string, Files]>([
+    ["a Next import", { ...next(), "next.config.mjs": `import a from "${HOSTILE}";\nexport default {};\n` }],
+    ["a Vite import", { ...viteReact(), "vite.config.ts": `import a from "${HOSTILE}";\n${REACT_CONFIG}` }],
+    ["a Vite script name", { ...viteReact(), ...pkg(["vite", "react", "react-dom", "@vitejs/plugin-react"], { [HOSTILE]: "vite build --base /x/" }) }],
+    ["an Angular script name", { ...angular(), ...pkg(["@angular/core"], { [HOSTILE]: "ng build --base-href /x/" }) }],
+    ["an unreadable package.json", { "package.json": HOSTILE }],
+    ...(NOT_WINDOWS ? [["a file name", { "index.html": HTML, "x\u001b[2J.php": "" }] as [string, Files]] : []),
+  ])("D: %s cannot repaint the plan or flood it", async (_name, files) => {
+    const root = project(files);
+    for (const [answers, argv] of [[[], []], [null, ["--yes"]], [[], ["--framework", "next"]]] as [string[] | null, string[]][]) {
+      const { stdout, stderr } = await run(root, answers, argv);
+      expect(stdout + stderr).not.toMatch(UNSAFE);
+      expect(stdout + stderr).not.toContain("a".repeat(120));
+    }
+  });
+});

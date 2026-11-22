@@ -2,6 +2,7 @@ import { existsSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { UsageError } from "./options.js";
 import { readText } from "./files.js";
+import { printable } from "./printable.js";
 import { nameUnrecognised, suggest, type Manifest } from "./recognise.js";
 
 /** Frameworks the CLI writes a component for. `html` is a folder of static pages. */
@@ -50,13 +51,13 @@ function readPackageJson(root: string): PackageJson | null {
   const path = join(root, "package.json");
   if (!existsSync(path)) return null;
   const text = readText(path);
-  if (text === null) throw new UsageError(`Could not read ${path}: it is not a readable file.`);
+  if (text === null) throw new UsageError(`Could not read ${printable(path, Infinity)}: it is not a readable file.`);
   try {
     const json: unknown = JSON.parse(text);
     if (typeof json !== "object" || json === null) throw new Error("not a JSON object");
     return json as PackageJson;
   } catch (error) {
-    throw new UsageError(`Could not read ${path}: ${(error as Error).message}`);
+    throw new UsageError(`Could not read ${printable(path, Infinity)}: ${printable((error as Error).message, Infinity)}`);
   }
 }
 

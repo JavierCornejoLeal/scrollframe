@@ -3,6 +3,7 @@ import { homedir, tmpdir } from "node:os";
 import { dirname, extname, join, resolve } from "node:path";
 import type { Framework } from "./detect.js";
 import { readText } from "./files.js";
+import { printable } from "./printable.js";
 
 // Detection suggests, it never authorizes: the person confirms or corrects the suggestion, and
 // unattended runs need explicit values. `doubts` are what to check before confirming: Enter is a
@@ -46,7 +47,7 @@ function configDoubts(file: string, code: string, knownImport: (from: string) =>
   const doubts: string[] = [];
   for (const from of new Set(importsOf(code))) {
     if (from === null) doubts.push(`${file} loads modules dynamically`);
-    else if (!knownImport(from)) doubts.push(`${file} imports ${from}`);
+    else if (!knownImport(from)) doubts.push(`${file} imports ${printable(from)}`);
   }
   if (/\.\.\.|Object\.assign|mergeConfig|[{,]\s*\[[^\]\n]+\]\s*:/.test(code)) doubts.push(`${file} builds options dynamically`);
   if (/process\.env|import\.meta\.env|\bloadEnv\b/.test(code)) doubts.push(`${file} reads the environment`);
@@ -66,6 +67,7 @@ function suggestNext(root: string): Suggestion {
     const config = readText(join(root, file));
     if (config === null) {
       doubts.push(`${file} cannot be read`);
+      urlUnknown = true; // It may set basePath.
       continue;
     }
     if (/\bbasePath\b/.test(config)) {
@@ -106,8 +108,10 @@ function suggestVite(root: string, pkg: Manifest, deps: Record<string, string>):
   let usesReact = false;
   let usesVue = false;
   if (!file) doubts.push("there is no vite.config, so nothing shows the React or Vue plugin");
-  else if (config === null) doubts.push(`${file} cannot be read`);
-  else {
+  else if (config === null) {
+    doubts.push(`${file} cannot be read`);
+    urlUnknown = true; // It may set base, root or publicDir.
+  } else {
     const imports = importsOf(config);
     usesReact = react && REACT_PLUGINS.some((plugin) => imports.includes(plugin));
     usesVue = vue && imports.includes(VUE_PLUGIN);
@@ -123,7 +127,7 @@ function suggestVite(root: string, pkg: Manifest, deps: Record<string, string>):
   }
   const script = scriptWith(pkg, /\bvite\b.*\s(?:--(?:base|root|config)(?=[=\s]|$)|-c\s)/);
   if (script) {
-    doubts.push(`the "${script}" script passes options that can move the site`);
+    doubts.push(`the "${printable(script)}" script passes options that can move the site`);
     urlUnknown = true;
   }
 
@@ -184,7 +188,7 @@ function suggestAngular(root: string, pkg: Manifest): Suggestion {
   const base = baseHref(readText(join(root, "src/index.html")) ?? "");
   if (base && base !== "/") doubts.push("src/index.html sets another base href");
   const script = scriptWith(pkg, /--(?:base-href|baseHref)(?=[=\s]|$)/);
-  if (script) doubts.push(`the "${script}" script sets --base-href`);
+  if (script) doubts.push(`the "${printable(script)}" script sets --base-href`);
   // Every Angular doubt is about what is copied or where it is served.
   return { framework: "angular", router: null, doubts, urlUnknown: doubts.length > 0 };
 }
@@ -243,7 +247,7 @@ function suggestHtml(root: string): Suggestion | null {
     const program = readdirSync(root).find(
       (file) => PROGRAM_FILES.includes(file) || SERVER_SOURCES.has(extname(file).toLowerCase()),
     );
-    if (program) doubts.push(`${program} means it is not only static pages`);
+    if (program) doubts.push(`${printable(program)} means it is not only static pages`);
   } catch {
     doubts.push("this folder cannot be read");
   }

@@ -91,7 +91,8 @@ export function servingUrl(value: string): string | null {
 }
 
 /** The same for --base-url, where `sequence` is also a path, as in 0.3.0. (Typed, it would be a typo.) */
-export function flagUrl(value: string): string | null {
+export function flagUrl(given: string): string | null {
+  const value = given.trim(); // Blank is no URL: " " would become ".".
   return servingUrl(value) ?? (/^[^/:.][^:]*$/.test(value) ? servingUrl(`./${value}`) : null);
 }
 
