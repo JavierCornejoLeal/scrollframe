@@ -18,6 +18,12 @@ describe("static stylesheet", () => {
     );
   });
 
+  it("spans the page before any script, unless full-width is false", () => {
+    expect(scrollSequenceStyles("scroll-sequence")).toContain(
+      'scroll-sequence:not([full-width="false"]){width:100vw;max-width:none;flex-shrink:0;box-sizing:border-box;left:calc(50% - 50vw)}',
+    );
+  });
+
   it("scopes the rules to a custom tag name", () => {
     expect(scrollSequenceStyles("my-story")).toMatch(/^my-story\{/);
     expect(scrollSequenceStyles("my-story")).not.toContain("scroll-sequence");

@@ -23,7 +23,7 @@ export interface ScrollSequenceErrorDetail {
   error: Error;
 }
 
-const OBSERVED = ["src", "alt", "base-url", "priority", "scroll-length"] as const;
+const OBSERVED = ["src", "alt", "base-url", "priority", "scroll-length", "full-width"] as const;
 
 /** Lets the module load where there is no DOM (SSR); the class is only usable in a browser. */
 const Base = (typeof HTMLElement === "undefined" ? class {} : HTMLElement) as typeof HTMLElement;
@@ -38,6 +38,7 @@ const Base = (typeof HTMLElement === "undefined" ? class {} : HTMLElement) as ty
 export function scrollSequenceStyles(tag: string = DEFAULT_TAG_NAME): string {
   return (
     `${tag}{display:grid;position:relative;height:var(--sf-scroll-length,300vh)}` +
+    `${tag}:not([full-width="false"]){width:100vw;max-width:none;flex-shrink:0;box-sizing:border-box;left:calc(50% - 50vw)}` +
     `${tag}>*{grid-area:1/1;align-self:start;position:sticky;top:0}` +
     `${tag}>[data-sf-stage]>canvas{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;pointer-events:none}`
   );
@@ -172,6 +173,9 @@ export class ScrollSequenceElement extends Base {
 
   #mount(manifest: SequenceManifest): void {
     const baseUrl = this.getAttribute("base-url") ?? undefined;
+    if (manifest.scrollLength && !this.getAttribute("scroll-length")) {
+      this.style.setProperty("--sf-scroll-length", manifest.scrollLength);
+    }
     const stage = this.#ensureStage();
     this.#renderPoster(
       stage,
@@ -186,6 +190,7 @@ export class ScrollSequenceElement extends Base {
       canvas: this.#ensureCanvas(stage),
       manifest,
       baseUrl,
+      fullWidth: this.getAttribute("full-width") !== "false",
       onProgress: (progress, frame) => this.#emit<ScrollSequenceProgressDetail>("sf-progress", { progress, frame }),
       onReady: () => this.#emit("sf-ready", undefined),
     }).start();

@@ -54,15 +54,25 @@ describe("ScrollSequence (SSR)", () => {
         createElement(ScrollSequence, { manifest, alt: 'Coffee "&" <pour>' }, createElement("h1", null, "Our story")),
       ),
     ).toBe(
-      '<section style="position:relative;height:300vh"><div style="position:sticky;top:0;height:100svh;overflow:hidden"><picture><source media="(max-width: 767px)" srcSet="/sequence/mobile/poster.webp" width="720" height="405" type="image/webp"/><img src="/sequence/desktop/poster.webp" alt="Coffee &quot;&amp;&quot; &lt;pour&gt;" width="1920" height="1080" loading="eager" fetchPriority="high" decoding="async" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover"/></picture><canvas aria-hidden="true" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;pointer-events:none"></canvas><div style="position:absolute;inset:0"><h1>Our story</h1></div></div></section>',
+      '<section style="position:relative;height:300vh;width:100vw;max-width:none;flex-shrink:0;box-sizing:border-box;left:calc(50% - 50vw)"><div style="position:sticky;top:0;height:100svh;overflow:hidden"><picture><source media="(max-width: 767px)" srcSet="/sequence/mobile/poster.webp" width="720" height="405" type="image/webp"/><img src="/sequence/desktop/poster.webp" alt="Coffee &quot;&amp;&quot; &lt;pour&gt;" width="1920" height="1080" loading="eager" fetchPriority="high" decoding="async" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover"/></picture><canvas aria-hidden="true" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;pointer-events:none"></canvas><div style="position:absolute;inset:0"><h1>Our story</h1></div></div></section>',
     );
     expect(
       renderToString(
         createElement(ScrollSequence, { manifest, alt: "x", priority: false, baseUrl: "https://cdn.example.com/seq" }),
       ),
     ).toBe(
-      '<section style="position:relative;height:300vh"><div style="position:sticky;top:0;height:100svh;overflow:hidden"><picture><source media="(max-width: 767px)" srcSet="https://cdn.example.com/seq/mobile/poster.webp" width="720" height="405" type="image/webp"/><img src="https://cdn.example.com/seq/desktop/poster.webp" alt="x" width="1920" height="1080" loading="lazy" fetchPriority="auto" decoding="async" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover"/></picture><canvas aria-hidden="true" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;pointer-events:none"></canvas><div style="position:absolute;inset:0"></div></div></section>',
+      '<section style="position:relative;height:300vh;width:100vw;max-width:none;flex-shrink:0;box-sizing:border-box;left:calc(50% - 50vw)"><div style="position:sticky;top:0;height:100svh;overflow:hidden"><picture><source media="(max-width: 767px)" srcSet="https://cdn.example.com/seq/mobile/poster.webp" width="720" height="405" type="image/webp"/><img src="https://cdn.example.com/seq/desktop/poster.webp" alt="x" width="1920" height="1080" loading="lazy" fetchPriority="auto" decoding="async" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover"/></picture><canvas aria-hidden="true" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;pointer-events:none"></canvas><div style="position:absolute;inset:0"></div></div></section>',
     );
+  });
+
+  it("takes the scroll length of the sequence unless told otherwise", () => {
+    const timed = { ...manifest, scrollLength: "630vh" };
+    expect(render({ manifest: timed })).toContain("height:630vh");
+    expect(render({ manifest: timed, scrollLength: "200vh" })).toContain("height:200vh");
+  });
+
+  it("fullWidth={false} leaves the width to the page, as before", () => {
+    expect(render({ fullWidth: false })).toContain('<section style="position:relative;height:300vh">');
   });
 
   it("throws a clear error for an invalid manifest", () => {

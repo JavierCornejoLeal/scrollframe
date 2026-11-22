@@ -342,3 +342,24 @@ describe("<scroll-sequence> poster state", () => {
     expect(el.querySelectorAll("img")).toHaveLength(1);
   });
 });
+
+describe("<scroll-sequence> size", () => {
+  it("is full width unless full-width is false", () => {
+    for (const [attrs, expected] of [[{}, true], [{ "full-width": "false" }, false]] as const) {
+      engines.length = 0;
+      const el = create(attrs);
+      el.manifest = manifest;
+      document.body.append(el);
+      expect(engines[0]!.options.fullWidth).toBe(expected);
+    }
+  });
+
+  it("takes the scroll length of the sequence unless the attribute is set", () => {
+    for (const [attrs, expected] of [[{}, "630vh"], [{ "scroll-length": "200vh" }, "200vh"]] as const) {
+      const el = create(attrs);
+      el.manifest = { ...manifest, scrollLength: "630vh" };
+      document.body.append(el);
+      expect(el.style.getPropertyValue("--sf-scroll-length")).toBe(expected);
+    }
+  });
+});

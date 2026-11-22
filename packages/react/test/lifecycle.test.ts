@@ -70,6 +70,13 @@ describe("ScrollSequence lifecycle", () => {
     expect(engine!.options.baseUrl).toBe("https://cdn.example.com/seq");
   });
 
+  it("asks the engine for full width unless told otherwise", () => {
+    render();
+    expect(engines[0]!.options.fullWidth).toBe(true);
+    render({ fullWidth: false });
+    expect(engines[1]!.options.fullWidth).toBe(false);
+  });
+
   it("destroys the engine on unmount", () => {
     render();
     act(() => root.unmount());
