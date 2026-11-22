@@ -119,11 +119,13 @@ describe("A2: Enter is yes only for a standard project without doubts", () => {
     ["Next, app", "next", next()],
     ["Next, src/pages", "next", { ...pkg(["next", "react"]), "src/pages/": "" }],
     ["Next, template config", "next", { ...next(), "next.config.ts": 'import type { NextConfig } from "next";\n\nconst nextConfig: NextConfig = {\n  reactStrictMode: true,\n};\n\nexport default nextConfig;\n' }],
+    ["Next, JavaScript template config", "next", { ...next(), "next.config.mjs": "/** @type {import('next').NextConfig} */\nconst nextConfig = {};\n\nexport default nextConfig;\n" }],
     ["Next with react-native-web", "next", next("react-native", "react-native-web")],
     ["Next with a Svelte library", "next", next("svelte")],
     ["Vite React", "react", viteReact()],
     ["Vite React with swc", "react", { ...viteReact("@vitejs/plugin-react-swc"), "vite.config.ts": REACT_CONFIG.replace("plugin-react'", "plugin-react-swc'") }],
     ["Vite React with react-native-web", "react", viteReact("react-native", "react-native-web")],
+    ["Vite React typed with JSDoc", "react", { ...viteReact(), "vite.config.ts": `/** @type {import('vite').UserConfig} */\n${REACT_CONFIG}` }],
     ["Vite React with router libraries", "react", viteReact("react-router", "@tanstack/react-router", "preact")],
     ["Vite Vue", "vue", viteVue()],
     ["Vite Vue with Quasar as a library", "vue", viteVue("quasar")],
@@ -172,6 +174,7 @@ describe("A2: everything else needs an explicit answer", () => {
     ["a comment about base", { ...viteReact(), "vite.config.ts": `${REACT_CONFIG}// set base: "/x/" for staging\n` }],
     ["Vite with another plugin", { ...viteReact(), "vite.config.ts": `import other from "vite-plugin-other";\n${REACT_CONFIG}` }],
     ["Vite with another config file in a script", { ...viteReact(), ...pkg(["vite", "react", "react-dom", "@vitejs/plugin-react"], { build: "vite build --config docs.config.ts" }) }],
+    ["Next loading its config dynamically", { ...next(), "next.config.mjs": "/** @type {import('next').NextConfig} */\nexport default (await import('./shared.mjs')).default;\n" }],
     ["Next with a wrapped config", { ...next(), "next.config.mjs": 'import withDocs from "./with-docs.mjs";\nexport default withDocs({});' }],
     ["Angular, ignore", angular({ assets: [{ ...PUBLIC, ignore: ["sequence/**"] }] })],
     ["Hugo with index.html", { "hugo.toml": "", "index.html": HTML, ".git/": "" }],
@@ -381,6 +384,26 @@ describe("A3: --yes", () => {
 });
 
 describe("the URL and the import", () => {
+  it.each(["/imágenes", "/hero(1)", "/a&b", "/hero!", "/v*2", "https://cdn.example/imágenes"])("accepts %s, as 0.3.0 did", async (url) => {
+    const { code, options } = await run(project(next()), null, EXPLICIT("next", "public/s", url));
+    expect(code).toBe(0);
+    expect(options!.baseUrl).toBe(url);
+  });
+
+  it.each([
+    ["html", "hero-sequence.html"],
+    ["angular", "src/app/hero-sequence/hero-sequence.ts"],
+    ["vue", "src/components/HeroSequence.vue"],
+  ])("escapes & in the markup written for %s", async (framework, file) => {
+    const root = project({});
+    expect((await run(root, null, EXPLICIT(framework, "public/s", "/a&copy"))).code).toBe(0);
+    expect(readFileSync(join(root, file), "utf8")).toContain('src="/a&amp;copy/manifest.json"');
+  });
+
+  it.each(["/a\\b", "/a{{b}}", "/a`b", "/a?b", "/a#b", "/a\u0007b"])("still refuses %j", async (url) => {
+    expect((await run(project(next()), null, EXPLICIT("next", "public/s", url))).code).toBe(2);
+  });
+
   it.each<[string, Files, string, string]>([
     ["HTML", { "index.html": HTML }, "media/hero", "/media/hero"],
     ["HTML with ./", { "index.html": HTML }, "./media/hero/", "/media/hero"],
@@ -461,7 +484,8 @@ describe("A4: the last line is the outcome", () => {
 
   it("a component that already existed is not claimed as written", async () => {
     const root = project({ ...next(), "components/HeroSequence.jsx": "// mine" });
-    const { code, last } = await run(root, [""]);
+    const { code, last, stdout } = await run(root, [""]);
+    expect(stdout).toContain('import manifest from "./public/sequence/manifest.json";\n<ScrollSequence manifest={manifest}');
     expect(code).toBe(0);
     expect(last).toBe("Frames written; components/HeroSequence.jsx already existed and was left as it was: check that it loads them from /sequence.");
   });
@@ -577,6 +601,8 @@ describe("RunDeps.confirm from 0.3.0 still works, without authorizing a guess", 
     ["standard, no", next(), false, 1, false],
     ["doubtful, yes", { ...next(), "next.config.ts": 'export default { basePath: "/docs" };' }, true, 0, false],
     ["unknown, yes", { "index.php": "" }, true, 0, false],
+    ["unreadable, yes", { "package.json": "{" }, true, 0, false],
+    ["unreadable, no", { "package.json": "{" }, false, 1, false],
   ])("%s", async (_name, files, answer, expected, installs) => {
     const commands: string[] = [];
     const questions: string[] = [];

@@ -32,6 +32,9 @@ const ALT = "Describe the scene for search engines and screen readers";
 /** The video's file name, safe inside a JS or HTML comment: no comment terminators or line breaks. */
 const commentSafe = (video: string) => basename(video).replace(/[^A-Za-z0-9 ._()\/-]/g, "_");
 
+/** A serving URL inside an attribute: without this, "&copy" would be read as an entity. */
+const attrUrl = (url: string) => url.replace(/&/g, "&amp;");
+
 const toPosix = (path: string) => path.replace(/\\/g, "/").replace(/\/+$/, "");
 
 /** Import specifier from the file at `from` to the file at `to`, both relative to the root. */
@@ -84,7 +87,7 @@ function htmlSnippet(context: TemplateContext): ComponentFile {
 <script src="${cdn}" defer></script>
 
 <!-- 2. Where the sequence goes (the poster is already in the HTML, so it shows before any script runs): -->
-<scroll-sequence src="${context.baseUrl}/manifest.json" alt="${ALT}">
+<scroll-sequence src="${attrUrl(context.baseUrl)}/manifest.json" alt="${ALT}">
   ${renderStageMarkup(manifest, { alt: ALT })}
   <h1>Your headline</h1>
 </scroll-sequence>
@@ -108,7 +111,7 @@ import "@scrollframe/element";
   selector: "app-${file}",
   schemas: [CUSTOM_ELEMENTS_SCHEMA],
   template: \`
-    <scroll-sequence src="${baseUrl}/manifest.json" alt="${ALT}">
+    <scroll-sequence src="${attrUrl(baseUrl)}/manifest.json" alt="${ALT}">
       <h1>Your headline</h1>
     </scroll-sequence>
   \`,
@@ -158,7 +161,7 @@ import "@scrollframe/element/style.css";
 </script>
 
 <template>
-  <scroll-sequence src="${baseUrl}/manifest.json" alt="${ALT}">
+  <scroll-sequence src="${attrUrl(baseUrl)}/manifest.json" alt="${ALT}">
     <h1>Your headline</h1>
   </scroll-sequence>
 </template>

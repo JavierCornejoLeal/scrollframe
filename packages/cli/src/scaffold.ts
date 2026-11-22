@@ -83,7 +83,9 @@ const toUrl = (path: string) => `/${path.split("/").map(encodeURIComponent).join
  */
 export function servingUrl(value: string): string | null {
   const url = value.trim().replace(/\/+$/, "");
-  return /^(?:\/[A-Za-z0-9\-._~%:@+=]|https?:\/\/[A-Za-z0-9[])[A-Za-z0-9\-._~%/:@+=[\]]*$/.test(url) ? url : null;
+  // Anything else a URL can hold is accepted, e.g. /imágenes or /hero(1); `&` is escaped in markup.
+  const safe = /^[^\s\p{Cc}\p{Cf}"'`<>{}\\,?#|^]+$/u.test(url);
+  return safe && /^(?:\/(?!\/)|https?:\/\/[^/])/.test(url) ? url : null;
 }
 
 /** The plan for what is known so far: the suggestion, replaced by whatever the flags (or answers) set. */

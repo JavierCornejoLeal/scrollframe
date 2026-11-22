@@ -153,7 +153,10 @@ export async function runCli(argv: string[], io: CliIO, overrides: Partial<RunDe
       // An unreadable project must not block the frames.
       const plan = framesOnlyPlan(options, unreadable);
       write(formatPlan(plan));
-      let answer: string | null = flags.yes ? "" : await ask("Generate only the frames? (Y/n) ");
+      let answer: string | null;
+      if (flags.yes) answer = "";
+      else if (deps.confirm && !overrides.ask) answer = (await deps.confirm("Continue? (Y/n) ")) ? "y" : null;
+      else answer = await ask("Generate only the frames? (Y/n) ");
       answer = answer?.trim().toLowerCase() ?? null;
       if (answer === "" || answer === "y" || answer === "yes") chosen = plan;
     } else if (!flags.yes && deps.confirm && !overrides.ask) {
@@ -246,6 +249,11 @@ async function execute(plan: ScaffoldPlan, invocation: Invocation): Promise<numb
       io.stderr.write(`Could not create ${path}: ${(error as Error).message}\n`);
       failed.push(`${path} was not written`);
     }
+  }
+
+  if (plan.existing && (plan.framework === "next" || plan.framework === "react")) {
+    // The user's file is left alone, so show what it needs to load these frames.
+    write(reactSnippet(result.manifestPath));
   }
 
   for (const edit of plan.edits) {

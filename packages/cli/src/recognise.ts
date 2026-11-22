@@ -32,7 +32,9 @@ const isDir = (path: string) => {
 };
 
 /** Every module a config imports, re-exports or requires; null for one that is computed. */
-function importsOf(code: string): (string | null)[] {
+function importsOf(source: string): (string | null)[] {
+  // A JSDoc type such as `@type {import('next').NextConfig}` loads nothing; starters ship it.
+  const code = source.replace(/@(?:type|satisfies|param|returns?|typedef)\s*\{\s*import\(\s*["'][^"']+["']\s*\)(?:\.\w+)+\s*\}/g, "");
   const found = [...code.matchAll(/(?:\bfrom|^\s*import)\s*["']([^"']+)["']/gm)].map((match) => match[1]!);
   return /\brequire\s*\(|\bimport\s*\(/.test(code) ? [...found, null] : found;
 }
