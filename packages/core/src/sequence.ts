@@ -133,6 +133,8 @@ export class ScrollSequence {
   private trimmedAt = 0;
   /** What the container had before the engine stretched it. */
   private ownLayout: { width: string; marginLeft: string; marginRight: string } | null = null;
+  /** The width the engine set, to tell whether the page has changed it since. */
+  private appliedWidth = "";
   private ready = false;
   private destroyed = false;
   private started = false;
@@ -203,10 +205,12 @@ export class ScrollSequence {
     window.removeEventListener("resize", this.handleResize);
     window.removeEventListener("resize", this.applyFullWidth);
     window.removeEventListener("online", this.handleOnline);
-    clearTimeout(this.retryTimer);
+    this.cancelRetry();
     cancelAnimationFrame(this.rafId);
     this.releaseFrames();
-    if (this.ownLayout) Object.assign(this.options.container.style, this.ownLayout);
+    // Only if the width is still the engine's: React may already have set what comes next.
+    const { style } = this.options.container;
+    if (this.ownLayout && style.width === this.appliedWidth) Object.assign(style, this.ownLayout);
   }
 
   get progress(): number {
@@ -252,6 +256,7 @@ export class ScrollSequence {
       style.marginRight = `${room - pageWidth + marginLeft}px`;
     };
     style.width = `${pageWidth}px`;
+    this.appliedWidth = style.width;
     place(start);
     // What the parent's box does not explain, e.g. a later grid column.
     const off = container.getBoundingClientRect().left + (window.scrollX || 0);
@@ -287,7 +292,7 @@ export class ScrollSequence {
       this.set = next;
       this.drawnIndex = -1;
       this.retries = 0;
-      clearTimeout(this.retryTimer);
+      this.cancelRetry();
       this.applyCanvasSize();
       if (this.near) {
         this.planDownloads();
@@ -299,16 +304,25 @@ export class ScrollSequence {
 
   private readonly handleOnline = (): void => {
     if (!this.near) return;
-    clearTimeout(this.retryTimer);
+    this.cancelRetry();
     this.retries = 0;
     this.retryFailed();
   };
 
+  /** One retry at a time: a long sequence keeps starting downloads, and each batch would ask for one. */
   private scheduleRetry(): void {
     const delay = RETRY_DELAYS_MS[this.retries];
-    if (delay === undefined || this.destroyed) return;
+    if (delay === undefined || this.destroyed || this.retryTimer !== undefined) return;
     this.retries++;
-    this.retryTimer = setTimeout(() => this.retryFailed(), delay);
+    this.retryTimer = setTimeout(() => {
+      this.retryTimer = undefined;
+      this.retryFailed();
+    }, delay);
+  }
+
+  private cancelRetry(): void {
+    clearTimeout(this.retryTimer);
+    this.retryTimer = undefined;
   }
 
   /** Only what is still missing, in the order it was first wanted. */

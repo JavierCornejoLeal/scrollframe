@@ -68,6 +68,10 @@ const BREAKPOINTS = [
 
 const MAX_FRAMES = 20000;
 export const FRAMES_PER_SECOND = 15;
+/** What --frames, --quality and --widths fall back to when the video does not decide them. */
+export const DEFAULT_FRAMES = 120;
+export const DEFAULT_QUALITY = 80;
+export const DEFAULT_WIDTHS = "720,1280,1920";
 export const MIN_FRAMES = 120;
 
 function toInt(value: string, flag: string, min: number, max: number): number {
@@ -119,7 +123,7 @@ export function parseCommandLine(argv: string[]): { generate: GenerateOptions; s
   if (!input) throw new UsageError("Missing <video>. Run `scrollframe --help`.");
   if (extra.length > 0) throw new UsageError(`Unexpected arguments: ${extra.join(" ")}`);
 
-  const widths = (values.widths ?? "720,1280,1920").split(",").map((w) => toInt(w.trim(), "--widths", 16, 7680));
+  const widths = (values.widths ?? DEFAULT_WIDTHS).split(",").map((w) => toInt(w.trim(), "--widths", 16, 7680));
   if (widths.length !== 3) throw new UsageError("--widths needs exactly three values: mobile,tablet,desktop.");
   if (!(widths[0]! < widths[1]! && widths[1]! < widths[2]!)) {
     throw new UsageError("--widths must be ascending: mobile < tablet < desktop.");
@@ -138,8 +142,8 @@ export function parseCommandLine(argv: string[]): { generate: GenerateOptions; s
       input,
       out: values.out,
       baseUrl: values["base-url"] ?? deriveBaseUrl(values.out),
-      frames: toInt(values.frames ?? "120", "--frames", 2, MAX_FRAMES),
-      quality: toInt(values.quality ?? "80", "--quality", 0, 100),
+      frames: toInt(values.frames ?? String(DEFAULT_FRAMES), "--frames", 2, MAX_FRAMES),
+      quality: toInt(values.quality ?? String(DEFAULT_QUALITY), "--quality", 0, 100),
       widths: widths as [number, number, number],
       lossless: values.lossless,
       ffmpeg: values.ffmpeg,

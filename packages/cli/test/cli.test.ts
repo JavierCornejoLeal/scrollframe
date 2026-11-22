@@ -210,9 +210,18 @@ describe.skipIf(!hasFfmpeg)("generateSequence following the video", () => {
     }
   }, 60_000);
 
-  it("--force also replaces the `large` set", async () => {
-    const out = join(scratch, "public", "owned");
-    mkdirSync(join(out, "large"), { recursive: true });
-    await expect(generateSequence(options([join(scratch, "long.mp4"), "-o", out]))).rejects.toThrow("already contains a sequence");
+  it("a folder named `large` is part of a sequence only next to its manifest", async () => {
+    const video = join(scratch, "long.mp4");
+    const mine = join(scratch, "public", "mine");
+    mkdirSync(join(mine, "large"), { recursive: true });
+    writeFileSync(join(mine, "large", "keep.txt"), "mine");
+    await generateSequence(options([video, "-o", mine, "--force", "-w", "40,80,160"]));
+    expect(readFileSync(join(mine, "large", "keep.txt"), "utf8")).toBe("mine");
+
+    const ours = join(scratch, "public", "ours");
+    await generateSequence(options([video, "-o", ours]));
+    await expect(generateSequence(options([video, "-o", ours]))).rejects.toThrow("already contains a sequence");
+    await generateSequence(options([video, "-o", ours, "--force", "-w", "40,80,160"]));
+    expect(existsSync(join(ours, "large"))).toBe(false);
   }, 60_000);
 });

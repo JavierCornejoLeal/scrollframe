@@ -185,7 +185,9 @@ describe("runCli scaffold: flags and detection", () => {
   });
 
   it("skips the install when the package is already a dependency", async () => {
-    const root = project({ "package.json": { dependencies: { next: "16", react: "19", "@scrollframe/react": "^0.2.0" } }, "app/": "" });
+    // The current release: an older one is updated (see "older runtime packages" in acceptance.test.ts).
+    const current = JSON.parse(readFileSync(new URL("../../react/package.json", import.meta.url), "utf8")).version as string;
+    const root = project({ "package.json": { dependencies: { next: "16", react: "19", "@scrollframe/react": `^${current}` } }, "app/": "" });
     const { calls, run } = harness(root);
     expect(await run("hero.mp4")).toBe(0);
     expect(calls.commands).toEqual([]);

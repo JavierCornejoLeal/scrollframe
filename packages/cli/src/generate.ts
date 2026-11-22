@@ -82,7 +82,9 @@ export function ffmpegNotFoundMessage(ffmpeg: string, bundledBinaryBlocked: bool
   ].join("\n");
 }
 
-const OWNED_ENTRIES = ["manifest.json", "mobile", "tablet", "desktop", "large"];
+const OWNED_ENTRIES = ["manifest.json", "mobile", "tablet", "desktop"];
+/** Newer than the others: a folder of that name is the user's unless a sequence is there. */
+const OWNED_WITH_MANIFEST = ["large"];
 
 /** Validates the output folder and returns the scrollframe-owned entries it already contains. */
 async function checkOutput(out: string, force: boolean): Promise<string[]> {
@@ -90,7 +92,8 @@ async function checkOutput(out: string, force: boolean): Promise<string[]> {
     throw new UsageError(`Output path is not a folder: ${out}`);
   }
   const entries = existsSync(out) ? await readdir(out) : [];
-  const owned = entries.filter((entry) => OWNED_ENTRIES.includes(entry));
+  const sequence = entries.includes("manifest.json");
+  const owned = entries.filter((entry) => OWNED_ENTRIES.includes(entry) || (sequence && OWNED_WITH_MANIFEST.includes(entry)));
   if (owned.length > 0 && !force) {
     throw new UsageError(`${out} already contains a sequence. Use --force to overwrite it.`);
   }
@@ -160,7 +163,12 @@ interface RawFrame {
   height: number;
 }
 
-/** Splits ffmpeg's stream of PPM images: each is `P6 <width> <height> 255` and then its RGB bytes. */
+/**
+ * What adaptive sets are cut from: a 16:9 frame this wide keeps the 2160 px of height that the
+ * 1296 px 3:5 phone crop needs, and covers the 2560 px set.
+ */
+const ADAPTIVE_SOURCE_WIDTH = 3840;
+
 const INTERRUPTS = ["SIGINT", "SIGTERM", "SIGHUP"] as const;
 
 /** A `finally` does not run on a signal: this removes what was half-done, then lets the signal act. */
@@ -181,6 +189,7 @@ function cleanUpOnInterrupt(staging: string, child: () => ChildProcess | null): 
   return stop;
 }
 
+/** Splits ffmpeg's stream of PPM images: each is `P6 <width> <height> 255` and then its RGB bytes. */
 async function* readPpm(stream: AsyncIterable<Buffer>): AsyncGenerator<RawFrame> {
   let header = Buffer.alloc(0);
   let frame: RawFrame | null = null;
@@ -249,7 +258,7 @@ export async function generateSequence(options: GenerateOptions, log: Log = () =
   try {
     const adaptive = options.auto?.sets === true;
     const fps = samplingFps(frames, duration);
-    const largest = adaptive ? 3840 : options.widths[2];
+    const largest = adaptive ? ADAPTIVE_SOURCE_WIDTH : options.widths[2];
     log(`Extracting ${frames} frames from ${duration.toFixed(2)}s of video...`);
     // Streamed, not saved first: two minutes of 4K as PNG files would be gigabytes of temp files.
     const child = spawn(

@@ -1,6 +1,6 @@
 import { frameUrl, posterUrl, type SequenceManifest } from "@scrollframe/core";
 import type { Framework } from "./detect.js";
-import type { GenerateOptions, ScaffoldFlags } from "./options.js";
+import { DEFAULT_FRAMES, DEFAULT_QUALITY, DEFAULT_WIDTHS, type GenerateOptions, type ScaffoldFlags } from "./options.js";
 
 /** One argument that reads the same in sh, zsh, cmd and PowerShell, or null when none would. */
 function quote(value: string): string | null {
@@ -18,13 +18,20 @@ export function retryCommand(
   setUp: { framework: Framework; url: string } | null,
 ): string | null {
   const args = [options.input.startsWith("-") ? `./${options.input}` : options.input, "--force"];
+  const widths = options.widths.join(",");
   const { auto } = options;
-  // With `auto`, what was given is repeated even when it equals a fallback: it changes the result.
-  if (auto ? !auto.frames : options.frames !== 120) args.push("--frames", String(options.frames));
-  if (auto ? !auto.quality && (auto.sets || options.quality !== 80) : options.quality !== 80) {
-    args.push("--quality", String(options.quality));
+  if (auto) {
+    // What was given is repeated even when it equals a fallback: it stops the video deciding.
+    if (!auto.frames) args.push("--frames", String(options.frames));
+    // With --widths the quality is not the video's either; it only needs repeating when it differs.
+    const qualityGiven = !auto.quality && (auto.sets || options.quality !== DEFAULT_QUALITY);
+    if (qualityGiven) args.push("--quality", String(options.quality));
+    if (!auto.sets) args.push("--widths", widths);
+  } else {
+    if (options.frames !== DEFAULT_FRAMES) args.push("--frames", String(options.frames));
+    if (options.quality !== DEFAULT_QUALITY) args.push("--quality", String(options.quality));
+    if (widths !== DEFAULT_WIDTHS) args.push("--widths", widths);
   }
-  if (auto ? !auto.sets : options.widths.join() !== "720,1280,1920") args.push("--widths", options.widths.join(","));
   if (options.lossless) args.push("--lossless");
   if (options.ffmpeg) args.push("--ffmpeg", options.ffmpeg);
   if (flags.name) args.push("--name", flags.name);

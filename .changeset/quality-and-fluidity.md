@@ -19,6 +19,6 @@ Sharper and more fluid sequences, whatever the length of the video.
 - The scroll is eased, and progress (`--sf-progress`, `onProgress`) follows the eased position.
 - Only frames near the scroll are decoded, and a long sequence only downloads what is near plus a coarse pass.
 
-Manifests from earlier versions keep working. New sequences need this version of `@scrollframe/react` or `@scrollframe/element`: update it in projects that already have one.
+Manifests from earlier versions keep working. New sequences need this version of `@scrollframe/react` or `@scrollframe/element`: when a project has an older one, the CLI updates it (or, with `--no-install`, says so). With `--force`, a folder named `large` is only replaced next to a sequence's `manifest.json`.
 
 The fix the CLI prints when npm 12 blocked ffmpeg now works after a blocked `npx` run.

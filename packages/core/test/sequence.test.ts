@@ -351,6 +351,23 @@ describe("ScrollSequence recovery", () => {
     expect(FakeImage.requests).toEqual([]);
   });
 
+  it("keeps the backoff while scrolling a long sequence that keeps failing", async () => {
+    const timers = vi.spyOn(globalThis, "setTimeout");
+    create({ manifest: parseManifest({ ...manifest, frameCount: 1800, padding: 4 }) }).engine.start();
+    FakeObserver.instances[0]!.intersect();
+    for (let step = 1; step <= 30; step++) {
+      rect.top = -60 * step;
+      window.dispatchEvent(new Event("scroll"));
+      flushFrames();
+      await failEverything();
+      await vi.advanceTimersByTimeAsync(100);
+    }
+    const delays = timers.mock.calls.map(([, ms]) => ms ?? 0).filter((ms) => ms >= 1000);
+    timers.mockRestore();
+    // Three seconds of scrolling while offline: only the first retry has come due.
+    expect(delays).toEqual([1000, 2000]);
+  });
+
   it("cancels pending retries on destroy", async () => {
     const engine = await startOffline();
     engine.destroy();
