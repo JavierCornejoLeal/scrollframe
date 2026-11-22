@@ -14,7 +14,7 @@ Project: Next.js (App Router) · TypeScript · pnpm
   Served at:  /sequence
 
 Plan:
- 1. Generate 120 frames in public/sequence/
+ 1. Generate 15 frames per second of video (at least 120) in public/sequence/
  2. Install @scrollframe/react  (pnpm add @scrollframe/react)
  3. Create components/HeroSequence.tsx
 
@@ -114,9 +114,9 @@ scrollframe <video> [options]
 
   -o, --out <dir>         Output folder (default: public/sequence)
   -b, --base-url <url>    Public URL of the output folder (default: derived from --out)
-  -f, --frames <n>        Frames to extract, 2-600, capped at the video's own (default: 120)
-  -q, --quality <0-100>   WebP quality (default: 80)
-  -w, --widths <m,t,d>    Mobile, tablet and desktop widths (default: 720,1280,1920)
+  -f, --frames <n>        Frames, 2-20000, capped at the video's own (default: 15/s, at least 120)
+  -q, --quality <0-100>   WebP quality (default: 82-84, or 80 with --widths)
+  -w, --widths <m,t,d>    Three uncropped widths (default: up to 2560, portrait crops for phones)
       --lossless          Lossless WebP (much heavier, hurts LCP; not recommended)
       --ffmpeg <path>     ffmpeg binary (default: FFMPEG_PATH, bundled ffmpeg-static, then PATH)
       --force             Overwrite a non-empty output folder
@@ -126,7 +126,13 @@ scrollframe <video> [options]
       --no-install        Do not install the scrollframe package
 ```
 
-Breakpoints: mobile ≤ 767px, tablet ≤ 1279px, desktop above. Frames are never upscaled beyond the source video.
+By default the CLI follows the video:
+
+- **Frames:** 15 per second (at least 120, never more than the video has), over 40vh of scroll per second (at least 300vh). Two minutes are 1800 frames: the page downloads a coarse pass and then only what is near the scroll, and keeps about two dozen of them decoded.
+- **Sizes:** full frames at 1920 and 2560 px, and for portrait screens a 3:5 crop (phones) and a 4:5 crop (tablets) of the centre, the part `object-fit: cover` would show anyway. The page picks by the shape and pixel density of the screen.
+- With `--widths` you get three uncropped sizes picked by viewport width instead: mobile ≤ 767px, tablet ≤ 1279px, desktop above.
+
+Frames are never upscaled beyond the source video. Expect a deploy of roughly 6 MB per second of 4K video.
 
 ### ffmpeg
 
@@ -134,7 +140,7 @@ scrollframe bundles ffmpeg through [`ffmpeg-static`](https://github.com/eugenewa
 
 ```bash
 # One-off run
-npx --allow-scripts=ffmpeg-static @scrollframe/cli hero.mp4
+npx --allow-scripts=ffmpeg-static -p "@scrollframe/cli" -p ffmpeg-static scrollframe hero.mp4
 
 # Installed in a project
 npm install-scripts approve ffmpeg-static && npm rebuild ffmpeg-static
@@ -148,7 +154,8 @@ Or install ffmpeg on your system, or pass `--ffmpeg <path>` / set `FFMPEG_PATH`.
 | --- | --- | --- |
 | `manifest` | required | Contents of the generated `manifest.json` |
 | `alt` | required | Poster alt text: describe the scene |
-| `scrollLength` | `"300vh"` | Scroll distance; longer is slower |
+| `scrollLength` | the manifest's, or `"300vh"` | Scroll distance; longer is slower |
+| `fullWidth` | `true` | Span the page whatever the width of the parent; `false` follows the parent |
 | `priority` | `true` | Eager, high-priority poster. Set `false` below the fold |
 | `baseUrl` | manifest | Serve frames from a CDN |
 | `onProgress` | — | `(progress, frameIndex) => void` |
@@ -248,7 +255,8 @@ import manifest from "../public/sequence/manifest.json";
 | `src` | URL of `manifest.json`. Ignored when the `manifest` property is set. |
 | `manifest` (property) | The manifest object, e.g. an imported `manifest.json`. |
 | `alt` | Describes the scene: the poster's alt text, the image search engines index. |
-| `scroll-length` | Scroll distance of the section (default `300vh`). Longer = slower playback. |
+| `scroll-length` | Scroll distance of the section (default: the manifest's, or `300vh`). Longer = slower playback. |
+| `full-width` | `false` follows the width of the parent. By default the element spans the page. |
 | `base-url` | Overrides the manifest `baseUrl` (e.g. a CDN). |
 | `priority="false"` | For a sequence below the fold: the poster loads lazily. |
 | `sf-progress` event | `detail: { progress, frame }` while scrolling. `--sf-progress` is also set for CSS. |

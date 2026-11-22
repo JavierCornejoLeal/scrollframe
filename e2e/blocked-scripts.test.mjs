@@ -19,7 +19,7 @@ const tgz = (name) => {
 };
 
 const FIXES = [
-  "npx --allow-scripts=ffmpeg-static @scrollframe/cli <video>",
+  'npx --allow-scripts=ffmpeg-static -p "@scrollframe/cli" -p ffmpeg-static scrollframe <video>',
   "npm install-scripts approve ffmpeg-static && npm rebuild ffmpeg-static",
   "install ffmpeg on your system, or pass --ffmpeg <path>",
 ];
@@ -99,4 +99,17 @@ test("the documented npx fix works in a project-less one-off run", () => {
   );
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /Done: 5 frames ->/);
+});
+
+test("the npx fix also works after a blocked npx run left its install in the cache", () => {
+  const scratch = join(root, "npx-after-blocked");
+  mkdirSync(scratch);
+  const env = { ...process.env, npm_config_cache: join(root, "blocked-cache") };
+  const packages = `-p "${tgz("scrollframe-core")}" -p "${tgz("scrollframe-cli")}"`;
+  const args = `scrollframe "${join(project, "clip.mp4")}" --out out --frames 5 --widths 80,160,320`;
+  // ffmpeg on the PATH of the runner would hide the blocked install.
+  const blocked = spawnSync(`npx -y ${packages} ${args}`, { cwd: scratch, shell: true, encoding: "utf8", env });
+  assert.notEqual(blocked.status, 0, "this npx run was meant to be blocked");
+  const fixed = spawnSync(`npx -y --allow-scripts=ffmpeg-static ${packages} -p ffmpeg-static ${args}`, { cwd: scratch, shell: true, encoding: "utf8", env });
+  assert.equal(fixed.status, 0, fixed.stderr);
 });

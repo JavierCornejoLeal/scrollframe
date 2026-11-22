@@ -134,7 +134,7 @@ describe("runCli scaffold: plan and confirmation", () => {
     });
     expect(await run("hero.mp4")).toBe(0);
     expect(out.stdout).toContain("Project: Next.js (App Router) · JavaScript · pnpm");
-    expect(out.stdout).toContain("1. Generate 120 frames in public/sequence/");
+    expect(out.stdout).toContain("1. Generate 15 frames per second of video (at least 120) in public/sequence/");
     expect(out.stdout).toContain("2. Install @scrollframe/react  (pnpm add @scrollframe/react)");
     expect(calls.questions).toEqual(["Continue? (Y = yes / e = edit / n = frames only) "]);
     expect(order).toEqual(["generate", "pnpm add @scrollframe/react"]);

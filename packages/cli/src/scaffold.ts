@@ -2,7 +2,7 @@ import { existsSync } from "node:fs";
 import { createRequire } from "node:module";
 import { basename, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import type { Framework, PackageManager, ProjectInfo } from "./detect.js";
-import { deriveBaseUrl, type GenerateOptions, type ScaffoldFlags } from "./options.js";
+import { FRAMES_PER_SECOND, MIN_FRAMES, deriveBaseUrl, type GenerateOptions, type ScaffoldFlags } from "./options.js";
 // Inlined at build time, after versioning: the CLI and the element are not always released together.
 import { version as ELEMENT_VERSION } from "../../element/package.json";
 import { STYLESHEET, planAngularStyles } from "./angular.js";
@@ -207,7 +207,11 @@ export function formatPlan(plan: ScaffoldPlan): string {
   if (framework || (plan.url && !project?.framework)) lines.push(`  Frames in:  ${folder}`, `  Served at:  ${plan.url ?? "unknown"}`);
   if (project) lines.push("");
 
-  const steps = [`Generate ${plan.generate.frames} frames in ${folder}`];
+  const { auto, frames } = plan.generate;
+  const amount = auto?.frames
+    ? `${FRAMES_PER_SECOND} frames per second of video (at least ${MIN_FRAMES})`
+    : `${frames} frames`;
+  const steps = [`Generate ${amount} in ${folder}`];
   if (plan.install) steps.push(`Install ${plan.install.pkg}  (${[plan.install.command, ...plan.install.args].join(" ")})`);
   if (plan.component) steps.push(`Create ${plan.component.path}`);
   for (const edit of plan.edits) steps.push(edit.description);

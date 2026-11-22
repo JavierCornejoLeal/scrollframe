@@ -18,9 +18,13 @@ export function retryCommand(
   setUp: { framework: Framework; url: string } | null,
 ): string | null {
   const args = [options.input.startsWith("-") ? `./${options.input}` : options.input, "--force"];
-  if (options.frames !== 120) args.push("--frames", String(options.frames));
-  if (options.quality !== 80) args.push("--quality", String(options.quality));
-  if (options.widths.join() !== "720,1280,1920") args.push("--widths", options.widths.join(","));
+  const { auto } = options;
+  // With `auto`, what was given is repeated even when it equals a fallback: it changes the result.
+  if (auto ? !auto.frames : options.frames !== 120) args.push("--frames", String(options.frames));
+  if (auto ? !auto.quality && (auto.sets || options.quality !== 80) : options.quality !== 80) {
+    args.push("--quality", String(options.quality));
+  }
+  if (auto ? !auto.sets : options.widths.join() !== "720,1280,1920") args.push("--widths", options.widths.join(","));
   if (options.lossless) args.push("--lossless");
   if (options.ffmpeg) args.push("--ffmpeg", options.ffmpeg);
   if (flags.name) args.push("--name", flags.name);
