@@ -398,6 +398,47 @@ describe("ScrollSequence recovery", () => {
     }
   });
 
+  it("after an outage longer than the retries, what failed is asked again once downloads work", async () => {
+    create({ manifest: parseManifest({ ...manifest, frameCount: 1800, padding: 4 }) }).engine.start();
+    FakeObserver.instances[0]!.intersect();
+    // A 10 s outage: every download fails and the three retries (1, 2 and 4 s) are spent.
+    for (let i = 0; i < 12; i++) {
+      await failEverything();
+      await vi.advanceTimersByTimeAsync(1000);
+    }
+    await failEverything();
+    FakeImage.requests = [];
+    // The server is back: the reader scrolls on, and those new downloads work.
+    rect.top = -400;
+    window.dispatchEvent(new Event("scroll"));
+    flushFrames();
+    for (let i = 0; i < 40; i++) {
+      for (const entry of [...FakeImage.pending.values()]) entry.resolve();
+      await vi.advanceTimersByTimeAsync(200);
+      flushFrames();
+    }
+    // 1799 belongs to the coarse pass and failed during the outage.
+    expect(FakeImage.requests).toContain("/seq/m/f-1799.webp");
+  });
+
+  it("a frame that is never there is not asked for faster than the backoff while scrolling", async () => {
+    create({ manifest: parseManifest({ ...manifest, frameCount: 1800, padding: 4 }) }).engine.start();
+    FakeObserver.instances[0]!.intersect();
+    const missing = "/seq/m/f-0000.webp";
+    // A minute of reading: everything loads except one frame, which always answers 404.
+    for (let second = 0; second < 60; second++) {
+      rect.top = -30 * second;
+      window.dispatchEvent(new Event("scroll"));
+      for (let step = 0; step < 5; step++) {
+        for (const [url, entry] of [...FakeImage.pending.entries()]) (url === missing ? entry.reject : entry.resolve)(new Error("404"));
+        await vi.advanceTimersByTimeAsync(200);
+        flushFrames();
+      }
+    }
+    // The backoff (1, 2, 4 s, then again once downloads work) allows about 26 a minute; one a second would be 60.
+    expect(FakeImage.requests.filter((url) => url === missing).length).toBeLessThan(35);
+  });
+
   it("cancels pending retries on destroy", async () => {
     const engine = await startOffline();
     engine.destroy();

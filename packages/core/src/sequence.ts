@@ -438,6 +438,12 @@ export class ScrollSequence {
         if (frame) {
           this.frames[index] = frame;
           this.downloaded++;
+          // A download that works after the retries ran out means the server is back: the
+          // budget starts again, so what failed during an outage is not left as a hole.
+          if (this.failed.size > 0 && this.retries >= RETRY_DELAYS_MS.length && this.retryTimer === undefined) {
+            this.retries = 0;
+            this.scheduleRetry();
+          }
         } else {
           this.failed.add(index); // a neighbour is painted meanwhile; retried below
         }
