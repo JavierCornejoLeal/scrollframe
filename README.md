@@ -132,7 +132,7 @@ By default the CLI follows the video:
 - **Sizes:** full frames at 1920 and 2560 px, and for portrait screens a 3:5 crop (phones) and a 4:5 crop (tablets) of the centre, the part `object-fit: cover` would show anyway. The page picks by the shape and pixel density of the screen.
 - With `--widths` you get three uncropped sizes picked by viewport width instead: mobile ≤ 767px, tablet ≤ 1279px, desktop above.
 
-Frames are never upscaled beyond the source video. Expect a deploy of roughly 6 MB per second of 4K video.
+Frames are never upscaled beyond the source video. Expect about 4.5 MB per second of video in the deploy (two minutes of 4K: about 530 MB); a visitor downloads a fraction of it.
 
 ### ffmpeg
 

@@ -577,3 +577,81 @@ describe("full width", () => {
     expect([container.style.width, container.style.marginLeft]).toEqual(["", ""]);
   });
 });
+
+describe("off-thread decoding in Chromium", () => {
+  const fetched: string[] = [];
+  const bitmaps: { url: string; closed: boolean }[] = [];
+  beforeEach(() => {
+    fetched.length = 0;
+    bitmaps.length = 0;
+    vi.stubGlobal("navigator", { userAgentData: { brands: [{ brand: "Chromium", version: "142" }] } });
+    vi.stubGlobal("fetch", async (url: string) => {
+      fetched.push(url);
+      return { ok: true, blob: async () => ({ url }) };
+    });
+    vi.stubGlobal("createImageBitmap", async (blob: { url: string }) => {
+      const bitmap = { url: blob.url, closed: false, close() { this.closed = true; } };
+      bitmaps.push(bitmap);
+      return bitmap;
+    });
+  });
+
+  it("fetches same-origin frames and paints ImageBitmaps, without <img>", async () => {
+    create().engine.start();
+    FakeObserver.instances[0]!.intersect();
+    for (let i = 0; i < 20; i++) await tick();
+    flushFrames();
+    expect(FakeImage.requests).toEqual([]);
+    expect(fetched[0]).toBe("/seq/m/f-00.webp");
+    expect((drawImage.mock.calls.at(-1)![0] as { url: string }).url).toBe("/seq/m/f-00.webp");
+  });
+
+  it("frees the bitmaps it lets go of", async () => {
+    const { engine } = create({ manifest: parseManifest({ ...manifest, frameCount: 240, padding: 4 }) });
+    engine.start();
+    FakeObserver.instances[0]!.intersect();
+    for (let i = 0; i < 200; i++) await tick();
+    for (let k = 1; k <= 10; k++) {
+      rect.top = -200 * k;
+      window.dispatchEvent(new Event("scroll"));
+      for (let i = 0; i < 6; i++) {
+        flushFrames();
+        await tick();
+      }
+    }
+    const open = bitmaps.filter((bitmap) => !bitmap.closed).length;
+    expect(bitmaps.length).toBeGreaterThan(30);
+    expect(open).toBeLessThanOrEqual(24);
+    engine.destroy();
+    expect(bitmaps.every((bitmap) => bitmap.closed)).toBe(true);
+  });
+
+  it("uses <img> for frames on another origin, which need no CORS that way", async () => {
+    create({ baseUrl: "https://cdn.example.com/seq" }).engine.start();
+    FakeObserver.instances[0]!.intersect();
+    await tick();
+    expect(fetched).toEqual([]);
+    expect(FakeImage.requests[0]).toBe("https://cdn.example.com/seq/m/f-00.webp");
+  });
+
+  it("retries a frame whose download failed", async () => {
+    let fail = true;
+    vi.stubGlobal("fetch", async (url: string) => {
+      fetched.push(url);
+      if (fail && url.endsWith("f-00.webp")) throw new TypeError("network");
+      return { ok: true, blob: async () => ({ url }) };
+    });
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      create().engine.start();
+      FakeObserver.instances[0]!.intersect();
+      for (let i = 0; i < 100; i++) await vi.advanceTimersByTimeAsync(0);
+      fail = false;
+      await vi.advanceTimersByTimeAsync(1000);
+      for (let i = 0; i < 20; i++) await vi.advanceTimersByTimeAsync(0);
+      expect(fetched.filter((url) => url.endsWith("f-00.webp"))).toHaveLength(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});

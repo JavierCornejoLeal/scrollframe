@@ -39,6 +39,26 @@ const DECODE_AHEAD = 10;
 const DECODE_BEHIND = 3;
 const MAX_DECODED = 24;
 
+type Frame = HTMLImageElement | ImageBitmap;
+
+/**
+ * Chromium decodes an ImageBitmap off the main thread, which kept a 1296x2160 sequence fluid on a
+ * phone-speed CPU where <img> dropped frames. WebKit and Firefox did worse with it, and fetching
+ * frames from another origin would need CORS, so they keep <img>.
+ */
+function decodesOffThread(url: string): boolean {
+  const brands = (navigator as Navigator & { userAgentData?: { brands?: { brand: string }[] } }).userAgentData?.brands;
+  if (!brands?.some(({ brand }) => brand === "Chromium")) return false;
+  if (typeof fetch !== "function" || typeof createImageBitmap !== "function") return false;
+  try {
+    return new URL(url, location.href).origin === location.origin;
+  } catch {
+    return false;
+  }
+}
+
+const release = (frame: Frame) => (frame as ImageBitmap).close?.();
+
 /** Progress is exposed to CSS so overlays can animate without re-rendering any framework. */
 export const PROGRESS_CSS_VAR = "--sf-progress";
 
@@ -87,13 +107,14 @@ export class ScrollSequence {
   private readonly ctx: CanvasRenderingContext2D | null;
   private set: FrameSet;
   /** Downloaded, still compressed. */
-  private frames: (HTMLImageElement | null)[] = [];
+  private frames: (HTMLImageElement | Blob | null)[] = [];
+  private offThread = false;
   private downloaded = 0;
   private queue: number[] = [];
   private coarse = new Set<number>();
   private requested = new Set<number>();
   private failed = new Set<number>();
-  private decoded = new Map<number, HTMLImageElement>();
+  private decoded = new Map<number, Frame>();
   private decoding = new Set<number>();
   /** Downloaded but undecodable: never tried again. */
   private broken = new Set<number>();
@@ -131,6 +152,7 @@ export class ScrollSequence {
     this.ctx = options.canvas.getContext("2d");
     this.set = this.pickSet();
     this.applyCanvasSize();
+    this.offThread = decodesOffThread(frameUrl(options.manifest, this.set, 0, options.baseUrl));
   }
 
   /** Starts observing. Returns `this` for chaining. Idempotent; no-op under reduced motion / Save-Data. */
@@ -242,6 +264,7 @@ export class ScrollSequence {
     this.queue = [];
     this.requested.clear();
     this.failed.clear();
+    this.decoded.forEach(release);
     this.decoded.clear();
     this.decoding.clear();
     this.broken.clear();
@@ -387,12 +410,11 @@ export class ScrollSequence {
       if (index === undefined) return;
       this.requested.add(index);
       const generation = this.generation;
-      const image = new Image();
-      const finish = (loaded: boolean): void => {
+      const finish = (frame: HTMLImageElement | Blob | null): void => {
         if (generation !== this.generation) return;
         this.requested.delete(index);
-        if (loaded) {
-          this.frames[index] = image;
+        if (frame) {
+          this.frames[index] = frame;
           this.downloaded++;
         } else {
           this.failed.add(index); // a neighbour is painted meanwhile; retried below
@@ -402,10 +424,18 @@ export class ScrollSequence {
         if (this.failed.size > 0) this.scheduleRetry();
         else this.retries = 0;
       };
-      image.onload = () => finish(true);
-      image.onerror = () => finish(false);
-      image.decoding = "async";
-      image.src = frameUrl(this.options.manifest, this.set, index, this.options.baseUrl);
+      const url = frameUrl(this.options.manifest, this.set, index, this.options.baseUrl);
+      if (this.offThread) {
+        fetch(url)
+          .then((response) => (response.ok ? response.blob() : Promise.reject(new Error(`HTTP ${response.status}`))))
+          .then(finish, () => finish(null));
+      } else {
+        const image = new Image();
+        image.onload = () => finish(image);
+        image.onerror = () => finish(null);
+        image.decoding = "async";
+        image.src = url;
+      }
     }
   }
 
@@ -441,9 +471,10 @@ export class ScrollSequence {
     this.decoding.add(index);
     const generation = this.generation;
     const startedAt = performance.now();
-    loadFrame(this.frames[index]!.src).then(
+    const source = this.frames[index]!;
+    (this.offThread ? createImageBitmap(source as Blob) : loadFrame((source as HTMLImageElement).src)).then(
       (frame) => {
-        if (generation !== this.generation) return;
+        if (generation !== this.generation) return release(frame);
         this.decoding.delete(index);
         this.decodeCost = this.decodeCost * 0.8 + Math.min(performance.now() - startedAt, 200) * 0.2;
         this.decoded.set(index, frame);
@@ -468,6 +499,7 @@ export class ScrollSequence {
         furthest = index;
       }
     }
+    release(this.decoded.get(furthest)!);
     this.decoded.delete(furthest);
   }
 
