@@ -542,15 +542,38 @@ describe("fluid scrolling", () => {
 
 describe("full width", () => {
   it.each([
-    [true, "1200px", "-40px"],
-    [undefined, "", ""],
-  ])("fullWidth %j", (fullWidth, width, left) => {
+    ["the parent", "block"],
+    ["an inline host, as Angular writes", "inline"],
+  ])("spans the page from %s without moving it out of the flow", (_name, display) => {
     Object.defineProperty(document.documentElement, "clientWidth", { configurable: true, value: 1200 });
+    const parent = document.createElement("div");
+    parent.style.padding = "0 10px";
+    Object.defineProperty(parent, "clientWidth", { value: 1000 });
+    parent.getBoundingClientRect = () => ({ left: 40 }) as DOMRect;
+    const host = document.createElement("app-hero");
+    host.style.display = display;
     const container = document.createElement("section");
+    // Content box of the parent: from 50 to 1030.
     container.getBoundingClientRect = () =>
-      ({ top: 0, height: 3000, left: 40 + (parseFloat(container.style.left) || 0) }) as DOMRect;
-    live.push(new ScrollSequence({ container, canvas: document.createElement("canvas"), manifest, fullWidth }).start());
-    expect([container.style.width, container.style.left]).toEqual([width, left]);
+      ({ top: 0, height: 3000, left: 50 + (parseFloat(container.style.marginLeft) || 0) }) as DOMRect;
+    if (display === "inline") parent.append(host), host.append(container);
+    else parent.append(container);
+    document.body.append(parent);
+    const engine = new ScrollSequence({ container, canvas: document.createElement("canvas"), manifest, fullWidth: true }).start();
+    live.push(engine);
+
+    const { width, left, marginLeft, marginRight } = container.style;
+    // Width and margins add up to the parent's 980, so Firefox sees nothing sticking out.
+    expect([width, left, marginLeft, marginRight]).toEqual(["1200px", "", "-50px", "-170px"]);
+    engine.destroy();
+    expect([container.style.width, container.style.marginLeft]).toEqual(["", ""]);
+    parent.remove();
     delete (document.documentElement as { clientWidth?: number }).clientWidth;
+  });
+
+  it("is off unless asked", () => {
+    const { engine, container } = create();
+    engine.start();
+    expect([container.style.width, container.style.marginLeft]).toEqual(["", ""]);
   });
 });

@@ -38,7 +38,7 @@ const Base = (typeof HTMLElement === "undefined" ? class {} : HTMLElement) as ty
 export function scrollSequenceStyles(tag: string = DEFAULT_TAG_NAME): string {
   return (
     `${tag}{display:grid;position:relative;height:var(--sf-scroll-length,300vh)}` +
-    `${tag}:not([full-width="false"]){width:100vw;max-width:none;flex-shrink:0;box-sizing:border-box;left:calc(50% - 50vw)}` +
+    `${tag}:not([full-width="false"]){width:100vw;max-width:none;flex-shrink:0;box-sizing:border-box;margin-left:calc(50% - 50vw);margin-right:calc(50% - 50vw)}` +
     `${tag}>*{grid-area:1/1;align-self:start;position:sticky;top:0}` +
     `${tag}>[data-sf-stage]>canvas{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;pointer-events:none}`
   );

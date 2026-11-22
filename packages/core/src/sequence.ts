@@ -111,7 +111,7 @@ export class ScrollSequence {
   private velocity = 0;
   private trimmedAt = 0;
   /** What the container had before the engine stretched it. */
-  private ownLayout: { width: string; left: string } | null = null;
+  private ownLayout: { width: string; marginLeft: string; marginRight: string } | null = null;
   private ready = false;
   private destroyed = false;
   private started = false;
@@ -203,18 +203,37 @@ export class ScrollSequence {
 
   /**
    * CSS alone cannot span the page: 100vw counts the scrollbar, and the parent may be off-centre.
-   * `left` (relative positioning) moves it without depending on how the parent aligns it.
+   * Width and margins add up to the parent's own width, so nothing depends on how it aligns children.
+   * (Moving it with `left` left its original box scrollable sideways in Firefox.)
    */
   private readonly applyFullWidth = (): void => {
     if (!this.options.fullWidth) return;
     const pageWidth = document.documentElement.clientWidth;
     if (!pageWidth) return;
-    const { style } = this.options.container;
-    this.ownLayout ??= { width: style.width, left: style.left };
+    const { container } = this.options;
+    const { style } = container;
+    this.ownLayout ??= { width: style.width, marginLeft: style.marginLeft, marginRight: style.marginRight };
+
+    // An inline host (Angular's component tag) has no width of its own.
+    let parent = container.parentElement;
+    while (parent && ["inline", "contents"].includes(getComputedStyle(parent).display)) parent = parent.parentElement;
+    let start = 0;
+    let room = pageWidth;
+    if (parent) {
+      const { paddingLeft, paddingRight } = getComputedStyle(parent);
+      const padding = parseFloat(paddingLeft) || 0;
+      start = parent.getBoundingClientRect().left + (window.scrollX || 0) + (parent.clientLeft || 0) + padding;
+      room = parent.clientWidth - padding - (parseFloat(paddingRight) || 0);
+    }
+    const place = (marginLeft: number): void => {
+      style.marginLeft = `${-marginLeft}px`;
+      style.marginRight = `${room - pageWidth + marginLeft}px`;
+    };
     style.width = `${pageWidth}px`;
-    style.left = "0px";
-    const offset = this.options.container.getBoundingClientRect().left + (window.scrollX || 0);
-    if (offset) style.left = `${-offset}px`;
+    place(start);
+    // What the parent's box does not explain, e.g. a later grid column.
+    const off = container.getBoundingClientRect().left + (window.scrollX || 0);
+    if (Math.abs(off) >= 0.5) place(start + off);
   };
 
   private releaseFrames(): void {

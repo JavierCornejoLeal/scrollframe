@@ -38,7 +38,8 @@ const spanPage: CSSProperties = {
   maxWidth: "none",
   flexShrink: 0,
   boxSizing: "border-box",
-  left: "calc(50% - 50vw)",
+  marginLeft: "calc(50% - 50vw)",
+  marginRight: "calc(50% - 50vw)",
 };
 
 export function ScrollSequence({
