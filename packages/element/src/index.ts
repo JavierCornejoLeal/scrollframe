@@ -2,6 +2,7 @@ import {
   STAGE_STYLE,
   ScrollSequence as Engine,
   parseManifest,
+  spanPage,
   renderPosterMarkup,
   type SequenceManifest,
 } from "@scrollframe/core";
@@ -73,6 +74,8 @@ export class ScrollSequenceElement extends Base {
   #refreshQueued = false;
   /** True between connectedCallback and disconnectedCallback. */
   #connected = false;
+  /** Spans the page when there is no engine to do it (the manifest failed). */
+  #unspan: (() => void) | null = null;
 
   constructor() {
     super();
@@ -133,6 +136,8 @@ export class ScrollSequenceElement extends Base {
     this.#abort = null;
     this.#engine?.destroy();
     this.#engine = null;
+    this.#unspan?.();
+    this.#unspan = null;
   }
 
   #load(): void {
@@ -248,6 +253,8 @@ export class ScrollSequenceElement extends Base {
   }
 
   #fail(error: unknown): void {
+    // The stylesheet's 100vw counts the scrollbar: without an engine, span the page exactly here.
+    if (!this.#unspan && !this.#engine && this.getAttribute("full-width") !== "false") this.#unspan = spanPage(this);
     const detail: ScrollSequenceErrorDetail = { error: error instanceof Error ? error : new Error(String(error)) };
     this.#emit("sf-error", detail);
   }

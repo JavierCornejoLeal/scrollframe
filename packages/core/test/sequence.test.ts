@@ -659,6 +659,42 @@ describe("full width", () => {
     delete (document.documentElement as { clientWidth?: number }).clientWidth;
   });
 
+  it("follows the page when its width changes without a window resize (a scrollbar appears)", () => {
+    const observers: { callback: () => void; targets: Element[] }[] = [];
+    vi.stubGlobal(
+      "ResizeObserver",
+      class {
+        targets: Element[] = [];
+        constructor(callback: () => void) {
+          observers.push({ callback, targets: this.targets });
+        }
+        observe(target: Element) {
+          this.targets.push(target);
+        }
+        disconnect() {
+          this.targets.length = 0;
+        }
+      },
+    );
+    let pageWidth = 1280;
+    Object.defineProperty(document.documentElement, "clientWidth", { configurable: true, get: () => pageWidth });
+    const container = document.createElement("section");
+    container.getBoundingClientRect = () => ({ top: 0, height: 3000, left: parseFloat(container.style.marginLeft) || 0 }) as DOMRect;
+    document.body.append(container);
+    const engine = new ScrollSequence({ container, canvas: document.createElement("canvas"), manifest, fullWidth: true }).start();
+    expect(container.style.width).toBe("1280px");
+    expect(observers.flatMap((o) => o.targets)).toContain(document.documentElement);
+
+    pageWidth = 1265; // the content grew and a 15 px scrollbar appeared
+    for (const observer of observers) observer.callback();
+    expect(container.style.width).toBe("1265px");
+
+    engine.destroy();
+    expect(observers.flatMap((o) => o.targets)).toEqual([]);
+    container.remove();
+    delete (document.documentElement as { clientWidth?: number }).clientWidth;
+  });
+
   it("is off unless asked", () => {
     const { engine, container } = create();
     engine.start();

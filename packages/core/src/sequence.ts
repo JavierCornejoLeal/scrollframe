@@ -1,4 +1,5 @@
 import { frameUrl, selectFrameSet, type FrameSet, type SequenceManifest } from "./manifest.js";
+import { spanPage } from "./span.js";
 import { clamp, coarseToFineOrder, frameIndexFromProgress, nearestLoaded, progressFromRect } from "./math.js";
 
 export interface ScrollSequenceOptions {
@@ -140,10 +141,8 @@ export class ScrollSequence {
   /** Frames per millisecond. */
   private velocity = 0;
   private trimmedAt = 0;
-  /** What the container had before the engine stretched it. */
-  private ownLayout: { width: string; marginLeft: string; marginRight: string } | null = null;
-  /** The width the engine set, to tell whether the page has changed it since. */
-  private appliedWidth = "";
+  /** Stops spanning the page; set while fullWidth is on. */
+  private unspan: (() => void) | null = null;
   private ready = false;
   private destroyed = false;
   private started = false;
@@ -169,12 +168,9 @@ export class ScrollSequence {
   /** Starts observing. Returns `this` for chaining. Idempotent; no-op under reduced motion / Save-Data. */
   start(): this {
     if (this.started || this.destroyed) return this;
-    this.applyFullWidth();
-    if (prefersStaticMedia()) {
-      // Only the poster, which still spans the page.
-      if (this.options.fullWidth && typeof window !== "undefined") window.addEventListener("resize", this.applyFullWidth);
-      return this;
-    }
+    // Also with only the poster (reduced motion, Save-Data).
+    if (this.options.fullWidth && typeof window !== "undefined") this.unspan = spanPage(this.options.container);
+    if (prefersStaticMedia()) return this;
     this.started = true;
     const blocker = findStickyBlocker(this.options.container);
     if (blocker) {
@@ -212,14 +208,12 @@ export class ScrollSequence {
     this.observer?.disconnect();
     window.removeEventListener("scroll", this.schedule);
     window.removeEventListener("resize", this.handleResize);
-    window.removeEventListener("resize", this.applyFullWidth);
     window.removeEventListener("online", this.handleOnline);
     this.cancelRetry();
     cancelAnimationFrame(this.rafId);
     this.releaseFrames();
-    // Only if the width is still the engine's: React may already have set what comes next.
-    const { style } = this.options.container;
-    if (this.ownLayout && style.width === this.appliedWidth) Object.assign(style, this.ownLayout);
+    this.unspan?.();
+    this.unspan = null;
   }
 
   get progress(): number {
@@ -235,42 +229,6 @@ export class ScrollSequence {
     this.options.canvas.width = this.set.width;
     this.options.canvas.height = this.set.height;
   }
-
-  /**
-   * CSS alone cannot span the page: 100vw counts the scrollbar, and the parent may be off-centre.
-   * Width and margins add up to the parent's own width, so nothing depends on how it aligns children.
-   * (Moving it with `left` left its original box scrollable sideways in Firefox.)
-   */
-  private readonly applyFullWidth = (): void => {
-    if (!this.options.fullWidth) return;
-    const pageWidth = document.documentElement.clientWidth;
-    if (!pageWidth) return;
-    const { container } = this.options;
-    const { style } = container;
-    this.ownLayout ??= { width: style.width, marginLeft: style.marginLeft, marginRight: style.marginRight };
-
-    // An inline host (Angular's component tag) has no width of its own.
-    let parent = container.parentElement;
-    while (parent && ["inline", "contents"].includes(getComputedStyle(parent).display)) parent = parent.parentElement;
-    let start = 0;
-    let room = pageWidth;
-    if (parent) {
-      const { paddingLeft, paddingRight } = getComputedStyle(parent);
-      const padding = parseFloat(paddingLeft) || 0;
-      start = parent.getBoundingClientRect().left + (window.scrollX || 0) + (parent.clientLeft || 0) + padding;
-      room = parent.clientWidth - padding - (parseFloat(paddingRight) || 0);
-    }
-    const place = (marginLeft: number): void => {
-      style.marginLeft = `${-marginLeft}px`;
-      style.marginRight = `${room - pageWidth + marginLeft}px`;
-    };
-    style.width = `${pageWidth}px`;
-    this.appliedWidth = style.width;
-    place(start);
-    // What the parent's box does not explain, e.g. a later grid column.
-    const off = container.getBoundingClientRect().left + (window.scrollX || 0);
-    if (Math.abs(off) >= 0.5) place(start + off);
-  };
 
   private releaseFrames(): void {
     this.frames = [];
@@ -292,7 +250,6 @@ export class ScrollSequence {
   };
 
   private readonly handleResize = (): void => {
-    this.applyFullWidth();
     const next = this.pickSet();
     if (next.name !== this.set.name) {
       this.generation++;
