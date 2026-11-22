@@ -353,7 +353,8 @@ export async function generateSequence(options: GenerateOptions, log: Log = () =
     const manifest: SequenceManifest = {
       ...buildManifest(options, count, sets.map(({ quality: _quality, ...set }): FrameSet => set)),
       padding: base.padding, // the one the files were named with
-      ...(adaptive ? { scrollLength: scrollLengthFor(duration) } : {}),
+      // Every CLI run: the duration is known whatever decided the frames and sizes. API callers without `auto` keep 0.4.0's manifest.
+      ...(options.auto ? { scrollLength: scrollLengthFor(duration) } : {}),
     };
     await writeFile(join(staging, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`);
     stopCleanUp(); // the swap restores on its own, and needs staging until it ends

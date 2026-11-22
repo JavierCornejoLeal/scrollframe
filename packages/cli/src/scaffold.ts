@@ -93,8 +93,9 @@ export interface PlannedInstall {
   pkg: string;
   command: string;
   args: string[];
-  /** The installed version this replaces, for an update. */
+  /** For an update: the installed version it replaces, and the range it installs. */
   from?: string;
+  range?: string;
 }
 
 export interface ScaffoldPlan {
@@ -190,7 +191,7 @@ export function planScaffold(project: ProjectInfo, generate: GenerateOptions, fl
   } else if (pkg !== null) {
     const from = outdated(project, pkg);
     const range = caretOf(RUNTIME_VERSIONS[pkg]!);
-    if (from && flags.install) install = { pkg, from, ...installCommand(project.packageManager, `${pkg}@${range}`) };
+    if (from && flags.install) install = { pkg, from, range, ...installCommand(project.packageManager, `${pkg}@${range}`) };
     else if (from) notes.push(`${pkg} ${from} is older than these frames need: update it to ${range}.`);
   }
 
@@ -266,8 +267,8 @@ export function formatPlan(plan: ScaffoldPlan): string {
     : `${frames} frames`;
   const steps = [`Generate ${amount} in ${folder}`];
   if (plan.install) {
-    const { pkg, from, command, args } = plan.install;
-    const what = from ? `Update ${pkg} ${from} -> ${args.at(-1)!.slice(pkg.length + 1)}` : `Install ${pkg}`;
+    const { pkg, from, range, command, args } = plan.install;
+    const what = from ? `Update ${pkg} ${from} -> ${range}` : `Install ${pkg}`;
     steps.push(`${what}  (${[command, ...args].join(" ")})`);
   }
   if (plan.component) steps.push(`Create ${plan.component.path}`);

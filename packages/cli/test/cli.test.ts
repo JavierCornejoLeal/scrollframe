@@ -210,6 +210,20 @@ describe.skipIf(!hasFfmpeg)("generateSequence following the video", () => {
     }
   }, 60_000);
 
+  it("--widths alone keeps frames and scroll length following the video", async () => {
+    const out = join(scratch, "public", "widths");
+    await generateSequence(options([join(scratch, "long.mp4"), "-o", out, "-w", "40,80,160"]));
+    const manifest = parseManifest(JSON.parse(readFileSync(join(out, "manifest.json"), "utf8")));
+    expect([manifest.frameCount, manifest.scrollLength]).toEqual([150, "400vh"]);
+  }, 60_000);
+
+  it("an API caller that sets no `auto` gets no scroll length, as before", async () => {
+    const out = join(scratch, "public", "api");
+    const { auto: _auto, ...classic } = options([join(scratch, "long.mp4"), "-o", out, "-f", "10", "-w", "40,80,160"]);
+    const { manifest } = await generateSequence(classic);
+    expect(manifest).not.toHaveProperty("scrollLength");
+  }, 60_000);
+
   it("a folder named `large` is part of a sequence only next to its manifest", async () => {
     const video = join(scratch, "long.mp4");
     const mine = join(scratch, "public", "mine");

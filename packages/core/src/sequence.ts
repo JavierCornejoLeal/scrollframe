@@ -38,6 +38,14 @@ const DECODE_SLOTS = 4;
 const DECODE_AHEAD = 10;
 const DECODE_BEHIND = 3;
 const MAX_DECODED = 24;
+/** Skipping more than this many frames per decode slot would no longer read as motion. */
+const MAX_STRIDE = 64;
+/** Slots kept free for the frame on screen and its neighbours when the scroll outruns decoding. */
+const STRIDE_HEADROOM = 0.6;
+/** Weight of the newest scroll movement in the speed estimate. */
+const VELOCITY_WEIGHT = 0.4;
+/** A first guess of the milliseconds a frame takes to decode, until one is measured. */
+const FIRST_DECODE_COST = 20;
 
 type Frame = HTMLImageElement | ImageBitmap;
 
@@ -118,7 +126,7 @@ export class ScrollSequence {
   private decoding = new Set<number>();
   /** Downloaded but undecodable: never tried again. */
   private broken = new Set<number>();
-  private decodeCost = 20;
+  private decodeCost = FIRST_DECODE_COST;
   private generation = 0;
   private observer: IntersectionObserver | null = null;
   private rafId = 0;
@@ -348,7 +356,7 @@ export class ScrollSequence {
     const target = frameIndexFromProgress(this.position, manifest.frameCount);
     const moved = target - this.target;
     if (moved !== 0) this.direction = Math.sign(moved);
-    this.velocity = settled ? 0 : this.velocity * 0.6 + (moved / elapsed) * 0.4;
+    this.velocity = settled ? 0 : this.velocity * (1 - VELOCITY_WEIGHT) + (moved / elapsed) * VELOCITY_WEIGHT;
     this.target = target;
     container.style.setProperty(PROGRESS_CSS_VAR, this.position.toFixed(4));
     onProgress?.(this.position, target);
@@ -459,7 +467,7 @@ export class ScrollSequence {
     // When the scroll outruns decoding, aim where it will be and skip frames on the way.
     const speed = Math.abs(this.velocity);
     let stride = 1;
-    while (stride < 64 && speed * this.decodeCost > DECODE_SLOTS * 0.6 * stride) stride *= 2;
+    while (stride < MAX_STRIDE && speed * this.decodeCost > DECODE_SLOTS * STRIDE_HEADROOM * stride) stride *= 2;
     const head = this.target + this.velocity * this.decodeCost;
     const base = stride === 1 ? Math.round(head) : Math.round(head / stride) * stride;
     const wanted: number[] = [];
@@ -478,8 +486,9 @@ export class ScrollSequence {
   }
 
   /**
-   * A second <img> of the downloaded url (the browser serves it from memory): dropping it lets go
-   * of the pixels while the compressed frame stays.
+   * Decodes a downloaded frame. With <img>, a second element of the same url (served from memory):
+   * dropping it lets go of the pixels while the compressed frame stays. In Chromium, an ImageBitmap
+   * of the fetched Blob, closed explicitly when it leaves the window.
    */
   private decode(index: number): void {
     this.decoding.add(index);

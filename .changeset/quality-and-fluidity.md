@@ -10,7 +10,7 @@ Sharper and more fluid sequences, whatever the length of the video.
 **Changed defaults:**
 
 - The sequence spans the page. Pass `fullWidth={false}` or `full-width="false"` to keep the width of its parent.
-- Frames follow the duration (15 per second, at least 120) and so does the scroll length.
+- Frames follow the duration (15 per second, at least 120), and so does the scroll length, also with `--frames` or `--widths`.
 - Frames go up to 2560 px at higher quality, with portrait crops for phones and tablets, so a sequence weighs more. `--frames`, `--widths` and `--quality` still override this.
 - The generated components no longer write an `<h1>` over the video.
 
