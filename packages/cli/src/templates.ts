@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { basename, join, posix } from "node:path";
 import { renderStageMarkup, type SequenceManifest } from "@scrollframe/core";
 import type { Framework, ProjectInfo } from "./detect.js";
@@ -49,7 +50,9 @@ function reactComponent(context: TemplateContext, page: string): ComponentFile {
   const src = project.srcDir ? "src/" : "";
   const path = `${src}components/${name}.${ext}`;
   const manifest = importPath(path, posix.join(toPosix(out), "manifest.json"));
-  const pagePath = `${src}${page}.${ext}`;
+  // JavaScript starters call it page.js: name the file that is there, if there is one.
+  const pages = [ext, "tsx", "jsx", "js"].map((extension) => `${src}${page}.${extension}`);
+  const pagePath = pages.find((file) => existsSync(join(project.root, file))) ?? pages[0]!;
   return {
     path,
     render: () => `import { ScrollSequence } from "@scrollframe/react";

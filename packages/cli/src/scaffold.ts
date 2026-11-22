@@ -81,13 +81,13 @@ const toUrl = (path: string) => `/${path.split("/").map(encodeURIComponent).join
 
 /**
  * A URL safe in generated code, markup and srcset (no quotes, spaces or commas), without its final
- * slash: `/path`, `./path`, `../path` or `http(s)://host/path`. null when it is not one.
+ * slash: `/path`, `./path`, `../path`, `//host/path` or `http(s)://host/path`. null when it is not one.
  */
 export function servingUrl(value: string): string | null {
   const url = value.trim().replace(/\/+$/, "");
   // Anything else a URL can hold is accepted, e.g. /imágenes or /hero(1); `&` is escaped in markup.
   const safe = /^[^\s\p{Cc}\p{Cf}"'`<>{}\\,?#|^]+$/u.test(url);
-  return safe && /^(?:\/(?!\/)|https?:\/\/[^/]|\.\.?(?:\/|$))/.test(url) ? url : null;
+  return safe && /^(?:\/(?!\/)|(?:https?:)?\/\/[^/]|\.\.?(?:\/|$))/.test(url) ? url : null;
 }
 
 /** The same for --base-url, where `sequence` is also a path, as in 0.3.0. (Typed, it would be a typo.) */

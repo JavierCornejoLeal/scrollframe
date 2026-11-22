@@ -302,7 +302,7 @@ describe("A1: correct or decline the suggestion", () => {
   });
 
   it("asks again for a URL that cannot go into code or markup", async () => {
-    const bad = ['/x"><script>', "//host/x", "relative", "/", "/a b", "/a,b"];
+    const bad = ['/x"><script>', "///host/x", "relative", "/", "/a b", "/a,b"];
     const { questions, options } = await run(project(next()), ["y", ...bad, "/ok", "y"], ["-o", "assets"]);
     expect(questions).toHaveLength(bad.length + 3);
     expect(options!.baseUrl).toBe("/ok");
@@ -850,5 +850,53 @@ describe("the last review of the fixes", () => {
       expect(stdout + stderr).toContain("reponame");
       expect(stdout + stderr).not.toMatch(UNSAFE);
     }
+  });
+});
+
+describe("the pre-release audit", () => {
+  it.each<[string, Files, string]>([
+    ["Next JavaScript, src/app", { ...pkg(["next", "react"]), "src/app/page.js": "" }, "src/app/page.js"],
+    ["Next JavaScript, app", { ...pkg(["next", "react"]), "app/page.js": "" }, "app/page.js"],
+    ["Next JavaScript, pages", { ...pkg(["next", "react"]), "pages/index.js": "" }, "pages/index.js"],
+    ["TypeScript with a JavaScript page", { ...pkg(["next", "react", "typescript"]), "app/page.js": "" }, "app/page.js"],
+    ["a page in the project's own extension first", { ...pkg(["next", "react", "typescript"]), "app/page.tsx": "", "app/page.js": "" }, "app/page.tsx"],
+    ["no page yet", next(), "app/page.jsx"],
+  ])("1: names the page that exists: %s", async (_name, files, page) => {
+    expect((await run(project(files), [""])).stdout).toContain(`Render it in a page, e.g. ${page}:`);
+  });
+
+  it("2: --base-url //host works as in 0.3.0", async () => {
+    const { code, options, last } = await run(project(next()), null, EXPLICIT("next", "public/s", "//cdn.example/seq/"));
+    expect(code).toBe(0);
+    expect(options!.baseUrl).toBe("//cdn.example/seq");
+    expect(last).toBe(CHECK("//cdn.example/seq"));
+  });
+
+  it("2: //host can be typed", async () => {
+    expect((await run(project(next()), ["e", "", "", "//cdn.example/seq", "y"])).options!.baseUrl).toBe("//cdn.example/seq");
+  });
+
+  it.each(["//", "///host/x"])("2: %s has no host and is refused", async (url) => {
+    expect((await run(project(next()), null, EXPLICIT("next", "public/s", url))).code).toBe(2);
+  });
+
+  it.each<[string, Files, string[], string, string, string]>([
+    ["e, all three", next(), ["e", "vue", "static/hero", "/media/hero", "n"], "vue", "static/hero", "/media/hero"],
+    ["e, only the URL", next(), ["e", "", "", "/docs/sequence", "n"], "next", "public/sequence", "/docs/sequence"],
+    ["a chosen framework", { "index.php": "" }, ["html", "n"], "html", "sequence", "/sequence"],
+    ["a typed URL", { ...next(), "next.config.mjs": 'export default { basePath: "/d" };' }, ["y", "/d/sequence", "n"], "next", "public/sequence", "/d/sequence"],
+  ])("3: the retry keeps %s", async (_name, files, answers, framework, out, baseUrl) => {
+    const root = project(files);
+    const first = await run(root, answers);
+    const line = first.stdout.split("\n").find((text) => text.startsWith("  npx @scrollframe/cli "))!;
+    const [, ...argv] = line.slice("  npx @scrollframe/cli ".length).match(/"[^"]*"|\S+/g)!.map((word) => word.replace(/^"|"$/g, ""));
+    expect(argv).not.toContain("--yes");
+    const parsed = parseCommandLine(["hero.mp4", ...argv]);
+    if (parsed === "help") throw new Error("help");
+    expect(parsed.scaffold.framework ?? detectProject(root).framework).toBe(framework);
+
+    const second = await run(root, ["y"], argv);
+    expect(second.options).toMatchObject({ out, baseUrl });
+    expect(second.stdout).toContain("Created");
   });
 });

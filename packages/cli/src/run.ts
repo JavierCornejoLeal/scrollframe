@@ -154,6 +154,8 @@ export async function runCli(argv: string[], io: CliIO, overrides: Partial<RunDe
   }
 
   let chosen: ScaffoldPlan | null = null;
+  // As given, until the answers correct them: a printed retry must repeat the corrections.
+  let decidedFlags = flags;
   try {
     if (project === null) {
       // An unreadable project must not block the frames.
@@ -172,7 +174,11 @@ export async function runCli(argv: string[], io: CliIO, overrides: Partial<RunDe
       write(formatPlan(plan));
       if (await deps.confirm("Continue? (Y/n) ")) chosen = plan;
     } else if (!flags.yes) {
-      chosen = await decide(project, options, flags, ask, write);
+      const decision = await decide(project, options, flags, ask, write);
+      if (decision) {
+        chosen = decision.plan;
+        decidedFlags = decision.flags;
+      }
     } else {
       const plan = planScaffold(project, options, flags);
       chosen = flags.framework ? plan : withoutSetup(plan);
@@ -185,7 +191,7 @@ export async function runCli(argv: string[], io: CliIO, overrides: Partial<RunDe
     write("Cancelled. Nothing was changed.\n");
     return 1;
   }
-  return execute(chosen, { options, flags, io, deps });
+  return execute(chosen, { options, flags: decidedFlags, io, deps });
 }
 
 interface Invocation {
@@ -198,10 +204,10 @@ interface Invocation {
 /** How to set up later, for a run that only generated the frames. */
 function setUpLater(plan: ScaffoldPlan, { options, flags }: Invocation): string {
   if (plan.project === null) return "";
-  const suggested = planScaffold(plan.project, options, flags);
-  // A complete command only for a standard suggestion; anything else has to be asked.
+  // A complete command only for a standard suggestion under --yes; anything else has to be asked.
+  const suggested = flags.yes ? planScaffold(plan.project, options, flags) : null;
   const complete =
-    flags.yes && suggested.framework !== null && suggested.url && !suggested.doubts?.length
+    suggested?.framework && suggested.url && !suggested.doubts?.length
       ? { framework: suggested.framework, url: suggested.url }
       : null;
   const command = retryCommand(plan.generate, flags, complete);
