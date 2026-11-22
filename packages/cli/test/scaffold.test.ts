@@ -45,9 +45,9 @@ function harness(cwd: string, overrides: Partial<RunDeps> = {}) {
   const deps: Partial<RunDeps> = {
     cwd,
     interactive: true,
-    confirm: async (question) => {
+    ask: async (question) => {
       calls.questions.push(question);
-      return true;
+      return "y";
     },
     generate: async (options) => {
       calls.generate.push(options);
@@ -98,7 +98,7 @@ describe("runCli scaffold: non-interactive keeps today's behaviour", () => {
     expect(calls.questions).toEqual([]);
     expect(calls.commands).toEqual([]);
     expect(out.stdout).toContain('import manifest from "./public/sequence/manifest.json";');
-    expect(out.stdout).toContain("Tip: run it in a terminal, or add --yes, to also set up the component for this Next.js project.");
+    expect(out.stdout).toContain("Tip: run it in a terminal to also set up the component for this Next.js project, or pass --yes with --framework, -o and --base-url.");
   });
 
   it.each([
@@ -136,21 +136,21 @@ describe("runCli scaffold: plan and confirmation", () => {
     expect(out.stdout).toContain("Project: Next.js (App Router) · JavaScript · pnpm");
     expect(out.stdout).toContain("1. Generate 120 frames in public/sequence/");
     expect(out.stdout).toContain("2. Install @scrollframe/react  (pnpm add @scrollframe/react)");
-    expect(calls.questions).toEqual(["Continue? (Y/n) "]);
+    expect(calls.questions).toEqual(["Continue? (Y = yes / e = edit / n = frames only) "]);
     expect(order).toEqual(["generate", "pnpm add @scrollframe/react"]);
   });
 
-  it("changes nothing and exits 1 when the answer is no", async () => {
-    const { out, calls, run } = harness(nextApp(), { confirm: async () => false });
+  it("changes nothing and exits 1 when cancelled", async () => {
+    const { out, calls, run } = harness(nextApp(), { ask: async () => null });
     expect(await run("hero.mp4")).toBe(1);
     expect(calls.generate).toEqual([]);
     expect(calls.commands).toEqual([]);
     expect(out.stdout).toContain("Cancelled. Nothing was changed.");
   });
 
-  it("--yes runs without asking, even without a terminal", async () => {
+  it("--yes with the three values runs without asking, even without a terminal", async () => {
     const { calls, run } = harness(nextApp(), { interactive: false });
-    expect(await run("hero.mp4", "--yes")).toBe(0);
+    expect(await run("hero.mp4", "--yes", "--framework", "next", "-o", "public/sequence", "--base-url", "/sequence")).toBe(0);
     expect(calls.questions).toEqual([]);
     expect(calls.commands).toEqual(["pnpm add @scrollframe/react"]);
   });
@@ -209,9 +209,9 @@ describe("runCli scaffold: flags and detection", () => {
 
   it("only generates the frames for an unsupported framework, and says why", async () => {
     const root = project({ "package.json": { dependencies: { svelte: "5" } }, "public/": "" });
-    const { out, calls, run } = harness(root);
+    const { out, calls, run } = harness(root, { ask: async () => "n" });
     expect(await run("hero.mp4")).toBe(0);
-    expect(out.stdout).toContain("Svelte is not supported yet: only the frames will be generated. Use --framework html for a plain HTML snippet.");
+    expect(out.stdout).toContain("Svelte is not supported yet");
     expect(calls.generate).toHaveLength(1);
     expect(calls.commands).toEqual([]);
   });
@@ -260,14 +260,14 @@ describe("runCli scaffold: the real prompt", () => {
   it.each([
     ["\n", 0],
     ["y\n", 0],
-    ["n\n", 1],
+    ["n\n", 0],
   ])("answers %j with exit %i", async (answer, code) => {
     const { stdin, stdout } = tty();
     const generate = vi.fn(async (options: GenerateOptions) => fakeResult(options, 6));
     const result = runCli(["hero.mp4", "--no-install"], { stdin, stdout, stderr: { write: () => true } }, { cwd: nextApp(), generate });
     setTimeout(() => stdin.write(answer), 20);
     expect(await result).toBe(code);
-    expect(generate).toHaveBeenCalledTimes(code === 0 ? 1 : 0);
+    expect(generate).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -325,7 +325,7 @@ describe("runCli scaffold: fixing a stylesheet that breaks the pinned sequence",
 
   it("leaves the stylesheet alone when the plan is cancelled", async () => {
     const root = withGlobals();
-    const { run } = harness(root, { confirm: async () => false });
+    const { run } = harness(root, { ask: async () => null });
     expect(await run("hero.mp4")).toBe(1);
     expect(readFileSync(join(root, "app/globals.css"), "utf8")).toBe(HIDDEN);
   });
@@ -333,12 +333,12 @@ describe("runCli scaffold: fixing a stylesheet that breaks the pinned sequence",
   it("does not overwrite a stylesheet that changed after the plan was shown", async () => {
     const root = withGlobals();
     const { out, run } = harness(root, {
-      confirm: async () => {
+      ask: async () => {
         writeFileSync(join(root, "app/globals.css"), "/* edited meanwhile */\n" + HIDDEN);
-        return true;
+        return "y";
       },
     });
-    expect(await run("hero.mp4")).toBe(0);
+    expect(await run("hero.mp4")).toBe(1);
     expect(readFileSync(join(root, "app/globals.css"), "utf8")).toBe("/* edited meanwhile */\n" + HIDDEN);
     expect(out.stderr).toContain("app/globals.css changed after the plan was made; it was not modified. Change overflow-x: hidden to clip there yourself.");
   });
@@ -364,12 +364,12 @@ describe("runCli scaffold: files that change or fail between the plan and the en
     const root = nextApp();
     writeFileSync(join(root, "app/globals.css"), HIDDEN);
     const { out, run } = harness(root, {
-      confirm: async () => {
+      ask: async () => {
         rmSync(join(root, "app/globals.css"));
-        return true;
+        return "y";
       },
     });
-    expect(await run("hero.mp4")).toBe(0);
+    expect(await run("hero.mp4")).toBe(1);
     expect(out.stderr).toContain("app/globals.css changed after the plan was made; it was not modified. Change overflow-x: hidden to clip there yourself.");
   });
 
@@ -385,10 +385,10 @@ describe("runCli scaffold: files that change or fail between the plan and the en
     const root = nextApp();
     writeFileSync(join(root, "app/globals.css"), HIDDEN);
     const { out, run } = harness(root, {
-      confirm: async () => {
+      ask: async () => {
         mkdirSync(join(root, "components"));
         writeFileSync(join(root, "components/HeroSequence.jsx"), "// appeared meanwhile");
-        return true;
+        return "y";
       },
     });
     expect(await run("hero.mp4")).toBe(1);
@@ -414,7 +414,7 @@ describe("runCli scaffold: Angular and Vue end to end", () => {
   });
 
   it("Vue: writes the component and prints the vite.config line", async () => {
-    const root = project({ "package.json": { dependencies: { vue: "3", vite: "8", "@vitejs/plugin-vue": "6" } }, "index.html": "", "src/": "", "public/": "" });
+    const root = project({ "package.json": { dependencies: { vue: "3", vite: "8", "@vitejs/plugin-vue": "6" } }, "index.html": "", "vite.config.ts": 'import vue from "@vitejs/plugin-vue";\nexport default { plugins: [vue()] };', "src/": "", "public/": "" });
     const { out, run } = harness(root);
     expect(await run("hero.mp4")).toBe(0);
     expect(readFileSync(join(root, "src/components/HeroSequence.vue"), "utf8")).toContain("<scroll-sequence src=");

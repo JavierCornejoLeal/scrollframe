@@ -6,17 +6,19 @@ Turn a video into a scroll-driven storytelling section with one command, without
 npx @scrollframe/cli hero.mp4
 ```
 
-It turns the video into optimized frames, detects your project (Next.js, React, Angular, Vue or plain HTML), shows what it will do and, after one confirmation, installs the right package and writes a ready-to-use component:
+It turns the video into optimized frames, suggests how to set up your project and lets you confirm or correct it, then installs the right package and writes the component:
 
 ```
 Project: Next.js (App Router) · TypeScript · pnpm
+  Frames in:  public/sequence/
+  Served at:  /sequence
 
 Plan:
  1. Generate 120 frames in public/sequence/
  2. Install @scrollframe/react  (pnpm add @scrollframe/react)
  3. Create components/HeroSequence.tsx
 
-Continue? (Y/n)
+Continue? (Y = yes / e = edit / n = frames only)
 ```
 
 The component it writes for React looks like this:
@@ -75,26 +77,34 @@ Use `onProgress={(progress, frame) => ...}` when you need it in JavaScript.
 
 Run it once with `npx @scrollframe/cli <video>` (or `pnpm dlx`), or install it (`npm i -D @scrollframe/cli`) and call the `scrollframe` command from your scripts. Nothing happens at install time: everything happens when the command runs, after you confirm.
 
-It only sets up projects it recognises with certainty:
+Detection only suggests. The CLI cannot know for sure how your project serves files, so you confirm the framework, the frames folder and its URL:
 
-| Project | Recognised by | Package installed | File written |
+| Template | Suggested for | Package installed | File written |
 | --- | --- | --- | --- |
-| Next.js (App or Pages Router) | `next` plus `app/` or `pages/`, no `basePath` | `@scrollframe/react` | `components/HeroSequence.tsx` (or `src/components/`, `.jsx` without TypeScript) |
-| React | Vite, its React plugin and a root `index.html`, default `base`, `root` and `publicDir` | `@scrollframe/react` | `src/components/HeroSequence.tsx` |
-| Angular | one app whose `angular.json` serves `public/` at the site root | `@scrollframe/element` | `src/app/hero-sequence/hero-sequence.ts`, and the stylesheet added to `angular.json` |
-| Vue | Vite, its Vue plugin and a root `index.html`, default `base`, `root` and `publicDir` | `@scrollframe/element` | `src/components/HeroSequence.vue`; the `vite.config` line to add is printed |
-| Plain HTML served from the site root | an `index.html` page, no `package.json`, no server code and no project around it | none (CDN) | `hero-sequence.html`: CDN lines and the block with the poster already rendered |
+| Next.js (App or Pages Router) | projects with `next` | `@scrollframe/react` | `components/HeroSequence.tsx` (or `src/components/`, `.jsx` without TypeScript) |
+| React | Vite with React and a root `index.html` | `@scrollframe/react` | `src/components/HeroSequence.tsx` |
+| Angular | projects with `@angular/core` | `@scrollframe/element` | `src/app/hero-sequence/hero-sequence.ts`, and the stylesheet added to `angular.json` |
+| Vue | Vite with Vue and a root `index.html` | `@scrollframe/element` | `src/components/HeroSequence.vue`; the `vite.config` line to add is printed |
+| Plain HTML | a folder with an `index.html` page and no `package.json` | none (CDN) | `hero-sequence.html`: CDN lines and the block with the poster already rendered |
 
-Anything else (WordPress, PHP, other backends and meta-frameworks, webpack, custom paths) only gets the frames, and the CLI ends saying it was not set up. `--framework` forces the set-up, without those checks: then pass `-o` and `--base-url` for where your site serves the frames.
+- **Standard project:** press Enter.
+- **Anything unusual** (a base path, other plugins, server code, a subfolder): it says what to check and Enter is not enough. Answer `y`, or `e` to correct the framework, folder and URL.
+- **Any other project** (WordPress, PHP, other backends and meta-frameworks have no template of their own yet): it asks which template to use, or generates only the frames.
 
-The component is named after the video (`hero.mp4` → `HeroSequence`), and the CLI prints the exact import for your main page.
+The component is named after the video (`hero.mp4` → `HeroSequence`), and the CLI prints the exact import for your main page. It does not check that the frames are served: it ends with the poster and frame URLs for you to open.
+
+Without questions (CI, scripts), `--yes` only generates the frames. To set up, give it the three values:
+
+```bash
+npx @scrollframe/cli hero.mp4 --yes --framework react -o public/sequence --base-url /sequence
+```
 
 It is careful with your project:
 
-- It shows the whole plan and asks once. `n`, Ctrl+C or Ctrl+D change nothing. `--yes` skips the question.
+- It shows the whole plan before changing anything. `n` keeps only the frames; Ctrl+C or Ctrl+D change nothing.
 - It never overwrites an existing file, and only edits a file if it still matches what the plan showed.
 - The package is installed with your package manager (pnpm, npm, yarn or bun, from the lockfile); `--no-install` skips it.
-- Without a terminal and without `--yes` (CI, scripts), it only generates the frames, as before, and prints a hint.
+- Without a terminal and without `--yes`, it only generates the frames and prints a hint.
 - **`overflow-x: hidden` on `html`/`body`** (the Next.js 16 starter stylesheet has it) stops the sequence from staying pinned while scrolling. The plan offers to change it to `overflow-x: clip`, which hides the overflow the same way. In the browser, the engine also warns in the console when an ancestor's overflow breaks pinning.
 
 ## CLI options
@@ -110,8 +120,8 @@ scrollframe <video> [options]
       --lossless          Lossless WebP (much heavier, hurts LCP; not recommended)
       --ffmpeg <path>     ffmpeg binary (default: FFMPEG_PATH, bundled ffmpeg-static, then PATH)
       --force             Overwrite a non-empty output folder
-  -y, --yes               Do not ask; set up the project (also without a terminal)
-      --framework <name>  Skip detection: next, react, angular, vue or html
+  -y, --yes               Do not ask: only frames, or set up with --framework, -o and --base-url
+      --framework <name>  next, react, angular, vue or html (instead of the suggestion)
       --name <Name>       Component name (default: from the video, e.g. HeroSequence)
       --no-install        Do not install the scrollframe package
 ```

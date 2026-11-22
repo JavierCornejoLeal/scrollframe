@@ -4,13 +4,16 @@ import { dirname, extname, join, resolve } from "node:path";
 import type { Framework } from "./detect.js";
 import { readText } from "./files.js";
 
-// The CLI sets up only what it positively recognises. Having a dependency is not enough: the
-// files that decide where the frames are served must be there and say what the templates assume.
-// Anything else gets frames only, with the reason; --framework forces the set-up.
+// Detection suggests, it never authorizes: the person confirms or corrects the suggestion, and
+// unattended runs need explicit values. `doubts` are what to check before confirming: Enter is a
+// yes only without doubts, so a doubt costs one typed "y" and can afford to be strict. Nothing
+// here proves where the frames are served.
 
-export type Recognition =
-  | { framework: Framework; router: "app" | "pages" | null }
-  | { framework: null; reason: string };
+export interface Suggestion {
+  framework: Framework | null;
+  router: "app" | "pages" | null;
+  doubts: string[];
+}
 
 export interface Manifest {
   dependencies?: Record<string, string>;
@@ -18,8 +21,7 @@ export interface Manifest {
   scripts?: Record<string, unknown>;
 }
 
-const no = (reason: string): Recognition => ({ framework: null, reason });
-const yes = (framework: Framework, router: "app" | "pages" | null = null): Recognition => ({ framework, router });
+const baseHref = (html: string) => /<base\s[^>]*href\s*=\s*["']?([^"'\s>]+)/i.exec(html)?.[1];
 
 const isDir = (path: string) => {
   try {
@@ -29,54 +31,96 @@ const isDir = (path: string) => {
   }
 };
 
-/** Config source without block comments that start a line and without whole-line `//` comments. */
-const withoutComments = (code: string) => code.replace(/^[ \t]*\/\*[\s\S]*?\*\//gm, "").replace(/^[ \t]*\/\/.*$/gm, "");
+/** Every module a config imports, re-exports or requires; null for one that is computed. */
+function importsOf(code: string): (string | null)[] {
+  const found = [...code.matchAll(/(?:\bfrom|^\s*import)\s*["']([^"']+)["']/gm)].map((match) => match[1]!);
+  return /\brequire\s*\(|\bimport\s*\(/.test(code) ? [...found, null] : found;
+}
+
+/** What makes a config's effective values unknowable from its text. */
+function configDoubts(file: string, code: string, knownImport: (from: string) => boolean): string[] {
+  const doubts: string[] = [];
+  for (const from of new Set(importsOf(code))) {
+    if (from === null) doubts.push(`${file} loads modules dynamically`);
+    else if (!knownImport(from)) doubts.push(`${file} imports ${from}`);
+  }
+  if (/\.\.\.|Object\.assign|mergeConfig|[{,]\s*\[[^\]\n]+\]\s*:/.test(code)) doubts.push(`${file} builds options dynamically`);
+  if (/process\.env|import\.meta\.env|\bloadEnv\b/.test(code)) doubts.push(`${file} reads the environment`);
+  return doubts;
+}
 
 function scriptWith(pkg: Manifest, flag: RegExp): string | null {
   const found = Object.entries(pkg.scripts ?? {}).find(([, script]) => typeof script === "string" && flag.test(script));
   return found?.[0] ?? null;
 }
 
-function recogniseNext(root: string): Recognition {
+function suggestNext(root: string): Suggestion {
+  const doubts: string[] = [];
   for (const file of ["next.config.js", "next.config.mjs", "next.config.cjs", "next.config.ts", "next.config.mts"]) {
-    const path = join(root, file);
-    if (!existsSync(path)) continue;
-    const config = readText(path);
-    if (config === null) return no(`${file} cannot be read`);
-    if (/\bbasePath\b/.test(withoutComments(config))) return no(`${file} sets basePath`);
-  }
-  if (isDir(join(root, "app")) || isDir(join(root, "src/app"))) return yes("next", "app");
-  if (isDir(join(root, "pages")) || isDir(join(root, "src/pages"))) return yes("next", "pages");
-  return no("Next.js without an app/ or pages/ folder here");
-}
-
-function recogniseVite(root: string, pkg: Manifest, deps: Record<string, string>): Recognition {
-  if (!existsSync(join(root, "index.html"))) return no("Vite without an index.html here");
-
-  const vue = "vue" in deps && "@vitejs/plugin-vue" in deps;
-  const react =
-    "react" in deps && "react-dom" in deps && ("@vitejs/plugin-react" in deps || "@vitejs/plugin-react-swc" in deps);
-  if (vue && react) return no("Vite with both the React and the Vue plugin");
-  if (!vue && !react) return no("Vite without the React or Vue plugin");
-
-  for (const ext of ["js", "mjs", "cjs", "ts", "mts", "cts"]) {
-    const file = `vite.config.${ext}`;
     if (!existsSync(join(root, file))) continue;
     const config = readText(join(root, file));
-    if (config === null) return no(`${file} cannot be read`);
-    const code = withoutComments(config).replace(/\bbase\s*:\s*(["'])\/\1/g, "");
-    const option = /(?:^|[{,\s])["']?(base|root|publicDir)["']?[ \t]*[:,}]/m.exec(code)?.[1];
-    if (option) return no(`${file} sets ${option}`);
+    if (config === null) {
+      doubts.push(`${file} cannot be read`);
+      continue;
+    }
+    if (/\bbasePath\b/.test(config)) doubts.push(`${file} mentions basePath`);
+    doubts.push(...configDoubts(file, config, (from) => from === "next"));
   }
-  const script = scriptWith(pkg, /--base(?=[=\s]|$)/);
-  if (script) return no(`the "${script}" script sets --base`);
-  return yes(vue ? "vue" : "react");
+  let router: Suggestion["router"] = null;
+  if (isDir(join(root, "app")) || isDir(join(root, "src/app"))) router = "app";
+  else if (isDir(join(root, "pages")) || isDir(join(root, "src/pages"))) router = "pages";
+  else doubts.push("there is no app/ or pages/ folder here");
+  return { framework: "next", router, doubts };
+}
+
+const REACT_PLUGINS = ["@vitejs/plugin-react", "@vitejs/plugin-react-swc"];
+const VUE_PLUGIN = "@vitejs/plugin-vue";
+/** Imports of the official starters. Another one can change what is served, so it is a doubt. */
+const STARTER_IMPORTS = new Set([
+  ...REACT_PLUGINS, VUE_PLUGIN, "vite", "vitest/config", "url", "path",
+  "@vitejs/plugin-vue-jsx", "vite-plugin-vue-devtools", "@tailwindcss/vite", "@rolldown/plugin-babel",
+]);
+
+function suggestVite(root: string, pkg: Manifest, deps: Record<string, string>): Suggestion | null {
+  if (!existsSync(join(root, "index.html"))) return null;
+  const react = "react" in deps;
+  const vue = "vue" in deps;
+  if (!react && !vue) return null;
+
+  const doubts: string[] = [];
+  // In the order Vite looks for them: it loads only the first.
+  const files = ["js", "mjs", "ts", "cjs", "mts", "cts"].map((ext) => `vite.config.${ext}`).filter((name) => existsSync(join(root, name)));
+  const file = files[0];
+  if (files.length > 1) doubts.push(`there are several Vite configs (${files.join(", ")})`);
+  if (REACT_PLUGINS.some((plugin) => plugin in deps) && VUE_PLUGIN in deps) doubts.push("both the React and the Vue plugin are installed");
+  const config = file ? readText(join(root, file)) : null;
+  let usesReact = false;
+  let usesVue = false;
+  if (!file) doubts.push("there is no vite.config, so nothing shows the React or Vue plugin");
+  else if (config === null) doubts.push(`${file} cannot be read`);
+  else {
+    const imports = importsOf(config);
+    usesReact = react && REACT_PLUGINS.some((plugin) => imports.includes(plugin));
+    usesVue = vue && imports.includes(VUE_PLUGIN);
+    if (usesReact === usesVue) doubts.push(`${file} does not show one React or Vue plugin`);
+    doubts.push(...configDoubts(file, config, (from) => STARTER_IMPORTS.has(from) || from.startsWith("node:")));
+    // Also in comments and nested options: asking costs a "y", guessing costs a broken page.
+    for (const option of ["base", "root", "publicDir"]) {
+      if (new RegExp(`\\b${option}\\b`).test(config)) doubts.push(`${file} mentions ${option}`);
+    }
+  }
+  const script = scriptWith(pkg, /\bvite\b.*\s(?:--(?:base|root|config)(?=[=\s]|$)|-c\s)/);
+  if (script) doubts.push(`the "${script}" script passes options that can move the site`);
+
+  const framework = usesVue || (!usesReact && vue) ? "vue" : "react";
+  return { framework, router: null, doubts };
 }
 
 interface AngularAsset {
   glob?: string;
   input?: string;
   output?: string;
+  ignore?: string[];
 }
 interface AngularOptions {
   assets?: (string | AngularAsset)[];
@@ -97,35 +141,36 @@ const servesPublic = (assets: unknown) =>
       typeof asset === "object" &&
       asset !== null &&
       asset.glob === "**/*" &&
+      !asset.ignore?.length &&
       (asset.input === "public" || asset.input === "public/") &&
       ["", "/", ".", undefined].includes(asset.output),
   );
 
-function recogniseAngular(root: string, pkg: Manifest): Recognition {
+function suggestAngular(root: string, pkg: Manifest): Suggestion {
+  const doubts: string[] = [];
   try {
     const workspace = JSON.parse(readText(join(root, "angular.json")) ?? "") as { projects?: Record<string, AngularProject> };
     const projects = Object.values(workspace.projects ?? {});
-    if (projects.length !== 1) return no("angular.json does not have exactly one project");
-    const app = projects[0]!;
-    if (app.root || (app.sourceRoot && app.sourceRoot !== "src")) return no("the Angular app is not in src/");
+    if (projects.length !== 1) doubts.push("angular.json does not have exactly one project");
+    const app = projects[0];
+    if (app?.root || (app?.sourceRoot && app.sourceRoot !== "src")) doubts.push("the Angular app is not in src/");
 
-    const build = app.architect?.build;
+    const build = app?.architect?.build;
     const configurations = Object.values(build?.configurations ?? {});
     const assets = [build?.options?.assets, ...configurations.filter((c) => c.assets).map((c) => c.assets)];
-    if (!assets.every(servesPublic)) return no("angular.json does not serve public/ at the site root");
-
+    if (!assets.every(servesPublic)) doubts.push("angular.json does not copy all of public/ to the site root");
     if ([build?.options, ...configurations].some((options) => options?.baseHref && options.baseHref !== "/")) {
-      return no("angular.json sets baseHref");
+      doubts.push("angular.json sets baseHref");
     }
-    if (Object.keys(app.i18n?.locales ?? {}).length > 0) return no("angular.json builds one folder per language");
+    if (Object.keys(app?.i18n?.locales ?? {}).length > 0) doubts.push("angular.json builds one folder per language");
   } catch {
-    return no("angular.json cannot be read");
+    doubts.push("angular.json cannot be read");
   }
-  const base = /<base\s[^>]*href\s*=\s*["']?([^"'\s>]+)/i.exec(readText(join(root, "src/index.html")) ?? "")?.[1];
-  if (base && base !== "/") return no("src/index.html sets another base href");
+  const base = baseHref(readText(join(root, "src/index.html")) ?? "");
+  if (base && base !== "/") doubts.push("src/index.html sets another base href");
   const script = scriptWith(pkg, /--(?:base-href|baseHref)(?=[=\s]|$)/);
-  if (script) return no(`the "${script}" script sets --base-href`);
-  return yes("angular");
+  if (script) doubts.push(`the "${script}" script sets --base-href`);
+  return { framework: "angular", router: null, doubts };
 }
 
 /** Files that make a folder a program or a generated site, not a folder of static pages. */
@@ -157,45 +202,54 @@ function enclosingProject(root: string): string | null {
   }
 }
 
-/** Starts like a page (after comments) and has no template syntax. */
-function isStaticPage(html: string): boolean {
+/** Starts like a page, after comments. */
+function isPage(html: string): boolean {
   let text = html.trimStart();
   while (text.startsWith("<!--")) {
     const end = text.indexOf("-->");
     if (end === -1) return false;
     text = text.slice(end + 3).trimStart();
   }
-  return /^(?:<!doctype html|<html[\s>])/i.test(text) && !/\{%|<%|<\?php/.test(text);
+  return /^(?:<!doctype html|<html[\s>])/i.test(text);
 }
 
-function recogniseHtml(root: string): Recognition {
+function suggestHtml(root: string): Suggestion | null {
   const page = readText(join(root, "index.html"));
-  if (page === null) return no("no index.html page or supported framework here");
-  if (!isStaticPage(page)) return no("index.html is not a static page");
-  let files: string[];
+  if (page === null || !isPage(page)) return null;
+  const doubts: string[] = [];
+  if (/\{%|<%|<\?php/.test(page)) doubts.push("index.html looks like a template");
+  const base = baseHref(page);
+  if (base && base !== "/") doubts.push("index.html sets another base href");
+  const generator = nameUnrecognised(root, {});
+  if (generator) doubts.push(`this looks like a ${generator.name} site`);
   try {
-    files = readdirSync(root);
+    const program = readdirSync(root).find(
+      (file) => PROGRAM_FILES.includes(file) || SERVER_SOURCES.has(extname(file).toLowerCase()),
+    );
+    if (program) doubts.push(`${program} means it is not only static pages`);
   } catch {
-    return no("this folder cannot be read");
+    doubts.push("this folder cannot be read");
   }
-  const program = files.find((file) => PROGRAM_FILES.includes(file) || SERVER_SOURCES.has(extname(file).toLowerCase()));
-  if (program) return no(`${program} means it is not only static pages`);
   const parent = enclosingProject(root);
-  if (parent) return no(`it is inside another project, which has ${parent}`);
-  return yes("html");
+  if (parent) doubts.push(`it is inside another project, which has ${parent}`);
+  return { framework: "html", router: null, doubts };
 }
 
-/** What the project in `root` is, when that is certain. */
-export function recognise(root: string, pkg: Manifest | null): Recognition {
-  if (pkg === null) return recogniseHtml(root);
+/** What the project in `root` looks like, and what to check before trusting that. */
+export function suggest(root: string, pkg: Manifest | null): Suggestion {
+  const none: Suggestion = { framework: null, router: null, doubts: [] };
+  if (pkg === null) return suggestHtml(root) ?? none;
+
   const deps = { ...pkg.dependencies, ...pkg.devDependencies };
-  // file:// pages cannot load /sequence, whatever builds them.
-  if ("electron" in deps) return no("Electron apps do not serve files at /");
-  if (existsSync(join(root, "artisan"))) return no("Laravel serves the front end");
-  if ("next" in deps) return recogniseNext(root);
-  if ("@angular/core" in deps) return recogniseAngular(root, pkg);
-  if ("vite" in deps) return recogniseVite(root, pkg, deps);
-  return no("package.json without Next.js, Angular, or Vite with React or Vue");
+  let found: Suggestion | null = null;
+  if ("next" in deps) found = suggestNext(root);
+  else if ("@angular/core" in deps) found = suggestAngular(root, pkg);
+  else if ("vite" in deps) found = suggestVite(root, pkg, deps);
+  if (!found) return none;
+
+  if ("electron" in deps) found.doubts.push("Electron pages are usually loaded from files, where /sequence does not exist");
+  if (existsSync(join(root, "artisan"))) found.doubts.push("Laravel serves the front end");
+  return found;
 }
 
 /** A name for a project that was not recognised. It never decides whether a project is set up. */

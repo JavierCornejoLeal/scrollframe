@@ -2,7 +2,9 @@ import { existsSync } from "node:fs";
 import { createRequire } from "node:module";
 import { basename, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import type { Framework, PackageManager, ProjectInfo } from "./detect.js";
-import { FRAMEWORKS, deriveBaseUrl, type GenerateOptions, type ScaffoldFlags } from "./options.js";
+import { deriveBaseUrl, type GenerateOptions, type ScaffoldFlags } from "./options.js";
+// Inlined at build time, after versioning: the CLI and the element are not always released together.
+import { version as ELEMENT_VERSION } from "../../element/package.json";
 import { planAngularStyles } from "./angular.js";
 import { planOverflowFixes, type FileEdit } from "./stylefix.js";
 import { componentFor, type ComponentFile } from "./templates.js";
@@ -27,8 +29,6 @@ const HINT_LABELS: Record<Framework, string> = {
   html: "plain HTML site",
 };
 
-const HINT_NAMES: Record<Framework, string> = { ...LABELS, html: "plain HTML" };
-
 /** The scrollframe package a framework renders with; plain HTML uses the CDN. */
 export function runtimePackage(framework: Framework): string | null {
   if (framework === "next" || framework === "react") return "@scrollframe/react";
@@ -52,16 +52,20 @@ export function componentName(video: string): string {
 export interface ScaffoldPlan {
   /** null when the project could not be read: only the frames are generated. */
   project: ProjectInfo | null;
-  /** null for an unsupported framework: only the frames are generated. */
+  /** The framework to set up; null to only generate the frames. */
   framework: Framework | null;
   generate: GenerateOptions;
+  /** Where the frames folder is served, or null when that is unknown and has to be typed. */
+  url?: string | null;
+  /** What to check before confirming. Enter is a yes only when this is empty. */
+  doubts?: string[];
   install: { pkg: string; command: string; args: string[] } | null;
   component: ComponentFile | null;
+  /** The component's path, when the user already has that file: it is left as it is. */
+  existing?: string | null;
   /** Changes to the user's stylesheets that keep the sequence pinned (see stylefix.ts). */
   edits: FileEdit[];
   notes: string[];
-  /** Printed last, so what was not set up is not lost above the progress output. */
-  closing?: string[];
 }
 
 /** `out` relative to `dir` (both resolved in the project root) with "/", or null when it is not inside it. */
@@ -73,98 +77,88 @@ function pathInside(root: string, dir: string, out: string): string | null {
 
 const toUrl = (path: string) => `/${path.split("/").map(encodeURIComponent).join("/")}`;
 
-const REDO = "to redo a finished run, add --force and delete the file it created";
+/**
+ * A URL safe in generated code, markup and srcset (no quotes, spaces or commas), without its final
+ * slash: `/path` or `http(s)://host/path`. null when it is not one.
+ */
+export function servingUrl(value: string): string | null {
+  const url = value.trim().replace(/\/+$/, "");
+  return /^(?:\/[A-Za-z0-9\-._~%:@+=]|https?:\/\/[A-Za-z0-9[])[A-Za-z0-9\-._~%/:@+=[\]]*$/.test(url) ? url : null;
+}
 
+/** The plan for what is known so far: the suggestion, replaced by whatever the flags (or answers) set. */
 export function planScaffold(project: ProjectInfo, generate: GenerateOptions, flags: ScaffoldFlags): ScaffoldPlan {
-  let framework = flags.framework ?? project.framework;
-  const forced = framework !== project.framework;
+  const framework = flags.framework ?? project.framework;
+  const detected = framework === project.framework;
   const notes: string[] = [];
-  const closing: string[] = [];
 
   let out = generate.out;
   if (!flags.outGiven) {
-    if (framework === "html" && (!forced || project.publicDir === null)) out = "sequence";
+    if (framework === "html" && (detected || project.publicDir === null)) out = "sequence";
     else if (project.framework === null && project.publicDir !== null) out = `${project.publicDir}/sequence`;
   }
-  let baseUrl = flags.baseUrlGiven || out === generate.out ? generate.baseUrl : deriveBaseUrl(out);
 
-  if (framework === null) {
-    if (project.unsupported !== null) {
-      notes.push(
-        `${project.unsupported} is not supported yet: only the frames will be generated. Use --framework html for a plain HTML snippet.`,
-      );
-      closing.push(`Not set up: ${project.unsupported} is not supported yet. Only the frames were generated.`);
-    } else {
-      notes.push(
-        `This project was not recognised${project.reason ? ` (${project.reason})` : ""}: only the frames will be generated. ` +
-          `To force the set-up use --framework ${FRAMEWORKS.join("|")}, with -o and --base-url set to where the site serves the frames.`,
-      );
-      closing.push("Not set up: this project was not recognised. Only the frames were generated.");
-    }
-  } else if (!flags.baseUrlGiven) {
-    // The folder each framework serves at the site root; a forced HTML page may have a public/ one.
+  let url: string | null = null;
+  if (flags.baseUrlGiven) {
+    url = servingUrl(generate.baseUrl);
+  } else if (framework !== null) {
+    // The folder each template expects at the site root; an HTML page that was not detected may have a public/.
     let served = framework === "html" ? "." : "public";
-    if (forced && framework === "html" && pathInside(project.root, "public", out) !== null) served = "public";
+    if (!detected && framework === "html" && pathInside(project.root, "public", out) !== null) served = "public";
     const path = pathInside(project.root, served, out);
-    if (path !== null) {
-      baseUrl = toUrl(path);
-    } else if (!forced) {
-      const folder = served === "." ? "this folder" : `${served}/`;
-      notes.push(`-o ${out} is not inside ${folder}, so its URL is unknown: pass --base-url to set the project up.`);
-      closing.push(`Not set up: -o ${out} is not inside ${folder} and no --base-url was given. Only the frames were generated.`);
-      framework = null;
-    }
+    if (path !== null) url = toUrl(path);
   }
-
-  if (framework !== null) {
-    const folder = `${out.replace(/[\\/]+$/, "")}/`;
-    let note: string | null = null;
-    if (forced) {
-      note =
-        `Set up as ${HINT_NAMES[framework]} because of --framework, without checking the project: ` +
-        `make sure ${folder} is served at ${baseUrl}, or run it again with --base-url.`;
-    } else if (framework === "html" && !flags.baseUrlGiven) {
-      note =
-        `The frames are loaded from ${baseUrl}, which only works if this folder is the site root. ` +
-        `Otherwise pass --base-url with the URL where ${folder} is served; ${REDO}.`;
-    }
-    if (note) {
-      notes.push(note);
-      closing.push(note);
-    }
-  }
+  const baseUrl = url ?? (flags.baseUrlGiven || out === generate.out ? generate.baseUrl : deriveBaseUrl(out));
   const options = { ...generate, out, baseUrl };
 
-  const pkg = framework === null ? null : runtimePackage(framework);
+  if (framework === null) {
+    if (project.unsupported !== null) notes.push(`${project.unsupported} is not supported yet, so there is nothing to suggest.`);
+    else notes.push("This project was not recognised, so there is nothing to suggest.");
+    return { project, framework, generate: options, url, doubts: [], install: null, component: null, existing: null, edits: [], notes };
+  }
+
+  const doubts = detected
+    ? [...(project.doubts ?? [])]
+    : [`${LABELS[framework]} was not detected here, so the files and URL assume a standard project`];
+  if (url === null) doubts.push(`the URL where ${out} is served is unknown`);
+  if (framework === "html" && detected && !flags.baseUrlGiven) {
+    notes.push("That URL assumes this folder is the site root: answer e to correct it if it is served from a subfolder.");
+  }
+
+  const pkg = runtimePackage(framework);
   const install =
     pkg !== null && flags.install && !project.dependencies.includes(pkg)
       ? { pkg, ...installCommand(project.packageManager, pkg) }
       : null;
 
-  let component: ComponentFile | null = null;
-  if (framework !== null) {
-    const name = flags.name ?? componentName(generate.input);
-    component = componentFor(framework, {
-      project,
-      name,
-      video: generate.input,
-      // Templates write import paths, so they need it relative to the root whatever -o looked like.
-      out: relative(project.root, resolve(project.root, options.out)),
-      baseUrl: options.baseUrl,
-      version: CLI_VERSION,
-    });
-    if (component && existsSync(join(project.root, component.path))) {
-      notes.push(`${component.path} already exists and will not be changed (use --name to create another one).`);
-      component = null;
-    }
+  let component = componentFor(framework, {
+    project,
+    name: flags.name ?? componentName(generate.input),
+    video: generate.input,
+    // Templates write import paths, so they need it relative to the root whatever -o looked like.
+    out: relative(project.root, resolve(project.root, out)),
+    baseUrl,
+    version: ELEMENT_VERSION,
+  });
+  let existing: string | null = null;
+  if (component && existsSync(join(project.root, component.path))) {
+    notes.push(`${component.path} already exists and will not be changed (use --name to create another one).`);
+    existing = component.path;
+    component = null;
   }
-  const edits = framework === null ? [] : planOverflowFixes(project, framework);
+
+  const edits = planOverflowFixes(project, framework);
   if (framework === "angular") {
     const { edit, note } = planAngularStyles(project);
     if (edit) edits.unshift(edit);
     if (note) notes.push(note);
   }
-  return { project, framework, generate: options, install, component, edits, notes, closing };
+  return { project, framework, generate: options, url, doubts, install, component, existing, edits, notes };
+}
+
+/** The same plan without the set-up. */
+export function withoutSetup(plan: ScaffoldPlan): ScaffoldPlan {
+  return { ...plan, framework: null, install: null, component: null, existing: null, edits: [], notes: [], doubts: [] };
 }
 
 export function describeProject(project: ProjectInfo, framework: Framework | null): string {
@@ -176,19 +170,35 @@ export function describeProject(project: ProjectInfo, framework: Framework | nul
 
 /** Frames only, for a project that could not be read (e.g. a package.json in the middle of an edit). */
 export function framesOnlyPlan(generate: GenerateOptions, reason: string): ScaffoldPlan {
-  return { project: null, framework: null, generate, install: null, component: null, edits: [], closing: ["Not set up: the project could not be read. Only the frames were generated."], notes: [`${reason}\nOnly the frames will be generated.`] };
+  return {
+    project: null,
+    framework: null,
+    generate,
+    url: null,
+    doubts: [],
+    install: null,
+    component: null,
+    existing: null,
+    edits: [],
+    notes: [`${reason}\nOnly the frames will be generated.`],
+  };
 }
 
 export function formatPlan(plan: ScaffoldPlan): string {
-  const steps = [`Generate ${plan.generate.frames} frames in ${plan.generate.out.replace(/[\\/]+$/, "")}/`];
+  const { project, framework } = plan;
+  const folder = `${plan.generate.out.replace(/[\\/]+$/, "")}/`;
+  const lines: string[] = [];
+  if (project) lines.push(describeProject(project, framework ?? project.framework));
+  if (framework) lines.push(`  Frames in:  ${folder}`, `  Served at:  ${plan.url ?? "unknown"}`);
+  if (project) lines.push("");
+
+  const steps = [`Generate ${plan.generate.frames} frames in ${folder}`];
   if (plan.install) steps.push(`Install ${plan.install.pkg}  (${[plan.install.command, ...plan.install.args].join(" ")})`);
   if (plan.component) steps.push(`Create ${plan.component.path}`);
   for (const edit of plan.edits) steps.push(edit.description);
-  const lines = [
-    ...(plan.project ? [describeProject(plan.project, plan.framework ?? plan.project.framework), ""] : []),
-    "Plan:",
-    ...steps.map((step, i) => ` ${i + 1}. ${step}`),
-  ];
+  lines.push("Plan:", ...steps.map((step, i) => ` ${i + 1}. ${step}`));
+
+  if (plan.doubts?.length) lines.push("", "Check before answering:", ...plan.doubts.map((doubt) => `  - ${doubt}`));
   if (plan.notes.length > 0) lines.push("", ...plan.notes);
   return `${lines.join("\n")}\n\n`;
 }
@@ -204,5 +214,5 @@ export function setupHint(project: ProjectInfo, out?: string): string | null {
     if (out === undefined || dir === null || dir === "public" || pathInside(project.root, dir, out) !== null) return `${note}\n`;
     return `${note} It serves static files from ${dir}/: use -o ${dir}/sequence.\n`;
   }
-  return `Tip: run it in a terminal, or add --yes, to also set up the component for this ${HINT_LABELS[project.framework]}.\n`;
+  return `Tip: run it in a terminal to also set up the component for this ${HINT_LABELS[project.framework]}, or pass --yes with --framework, -o and --base-url.\n`;
 }

@@ -2,7 +2,7 @@ import { existsSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { UsageError } from "./options.js";
 import { readText } from "./files.js";
-import { nameUnrecognised, recognise, type Manifest } from "./recognise.js";
+import { nameUnrecognised, suggest, type Manifest } from "./recognise.js";
 
 /** Frameworks the CLI writes a component for. `html` is a folder of static pages. */
 export type Framework = "next" | "react" | "angular" | "vue" | "html";
@@ -10,12 +10,12 @@ export type PackageManager = "pnpm" | "yarn" | "bun" | "npm";
 
 export interface ProjectInfo {
   root: string;
-  /** null when the project is not positively recognised: only the frames are generated. */
+  /** What the project looks like: a suggestion to confirm. null when there is none. */
   framework: Framework | null;
-  /** Display name of an unsupported framework, e.g. "Svelte"; null when recognised or unknown. */
+  /** Display name of a framework without a template, e.g. "Svelte"; null otherwise. */
   unsupported: string | null;
-  /** When `framework` is null: what was missing to recognise the project. */
-  reason?: string;
+  /** What to check before confirming the suggestion; empty for a standard project. */
+  doubts?: string[];
   /** Next.js only: which router the project uses. */
   router: "app" | "pages" | null;
   /** The project keeps its sources under `src/`. */
@@ -68,13 +68,14 @@ function detectPackageManager(root: string, pkg: PackageJson | null): PackageMan
 export function detectProject(root: string): ProjectInfo {
   const pkg = readPackageJson(root);
   const deps = { ...pkg?.dependencies, ...pkg?.devDependencies };
-  const found = recognise(root, pkg);
+  const found = suggest(root, pkg);
   const named = found.framework === null ? nameUnrecognised(root, deps) : null;
   return {
     root,
-    ...(found.framework === null
-      ? { framework: null, unsupported: named?.name ?? null, reason: found.reason, router: null }
-      : { framework: found.framework, unsupported: null, router: found.router }),
+    framework: found.framework,
+    unsupported: named?.name ?? null,
+    doubts: found.doubts,
+    router: found.router,
     srcDir: isDir(join(root, "src")),
     typescript: existsSync(join(root, "tsconfig.json")) || "typescript" in deps,
     packageManager: detectPackageManager(root, pkg),

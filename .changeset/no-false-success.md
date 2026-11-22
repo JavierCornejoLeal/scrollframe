@@ -1,10 +1,12 @@
 ---
-"@scrollframe/cli": patch
+"@scrollframe/cli": minor
 ---
 
-Only set up projects that are recognised with certainty, instead of taking any project with React or Vue for one and everything else for plain HTML:
+The CLI no longer decides how to set up a project: it suggests, and you confirm. It used to report success on WordPress, Django, Gatsby, Expo and other projects where the result could not work.
 
-- Next.js with `app/` or `pages/`, React or Vue with Vite and a root `index.html`, Angular serving `public/` at the site root, and folders of static pages are set up.
-- Everything else only gets the frames, and the run ends saying it was not set up. This includes projects that used to be set up automatically: React or Vue without Vite, custom base paths, PHP and other backends. `--framework` forces the set-up.
-- The URL of a custom `-o` is computed from the folder the project serves.
-- In a terminal or with `--yes`, Gatsby, Docusaurus, SvelteKit and Hugo get the frames in `static/`. Without either, the output folder is unchanged and a note says to use `-o static/sequence`.
+**Breaking:** `--yes` alone now only generates the frames. To set up without questions pass `--yes --framework <name> -o <folder> --base-url <url>`.
+
+- In a terminal you see the framework, the frames folder and its URL, and answer `y`, `e` (correct them) or `n` (frames only, which used to cancel: use Ctrl+C to cancel). Enter is a yes only for a standard project; anything unusual needs an explicit answer.
+- The last line reports what happened, with the poster and frame URLs to open. An incomplete set-up exits 1.
+- Plain HTML loads the released version of `@scrollframe/element` from the CDN, also when the CLI version differs.
+- `RunDeps.ask` replaces `RunDeps.confirm`, which still works but is deprecated: it can only confirm a standard suggestion, and otherwise confirms the frames alone.

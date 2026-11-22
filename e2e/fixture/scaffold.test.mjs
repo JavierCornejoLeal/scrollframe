@@ -45,6 +45,9 @@ function cli(cwd, args) {
   return { code: result.status, stdout: result.stdout, stderr: result.stderr };
 }
 
+/** The three values an unattended set-up needs. */
+const setUp = (framework, out) => ["--yes", "--framework", framework, "-o", out, "--base-url", "/sequence"];
+
 const read = (root, path) => readFileSync(join(root, path), "utf8");
 
 test("without a terminal and without --yes it only generates the frames, plus a hint", () => {
@@ -53,12 +56,26 @@ test("without a terminal and without --yes it only generates the frames, plus a 
   assert.equal(code, 0);
   assert.ok(existsSync(join(root, "public/sequence/manifest.json")));
   assert.equal(existsSync(join(root, "hero-sequence.html")), false);
-  assert.match(stdout, /Tip: run it in a terminal, or add --yes, to also set up the component for this plain HTML site\./);
+  assert.match(stdout, /Tip: run it in a terminal to also set up the component for this plain HTML site, or pass --yes with --framework, -o and --base-url\./);
+});
+
+test("--yes alone only generates frames, and the command it prints sets up as written", () => {
+  const root = project("bare-yes", { "index.html": "<!doctype html>" });
+  const first = cli(root, ["--yes"]);
+  assert.equal(first.code, 0, first.stderr);
+  assert.equal(existsSync(join(root, "hero-sequence.html")), false);
+  assert.match(first.stdout.trimEnd().split("\n").at(-1), /^Not set up: --yes alone only generates the frames\.$/);
+
+  const line = first.stdout.split("\n").find((text) => text.startsWith("  npx @scrollframe/cli "));
+  const args = line.slice("  npx @scrollframe/cli ".length).match(/"[^"]*"|\S+/g).map((word) => word.replace(/^"|"$/g, ""));
+  const second = spawnSync(process.execPath, [CLI, ...args], { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+  assert.equal(second.status, 0, second.stderr);
+  assert.match(read(root, "hero-sequence.html"), /<scroll-sequence src="\/sequence\/manifest\.json"/);
 });
 
 test("plain HTML: frames in sequence/ and a snippet with the poster already rendered", () => {
   const root = project("plain", { "index.html": "<!doctype html>" });
-  const { code, stdout, stderr } = cli(root, ["--yes"]);
+  const { code, stdout, stderr } = cli(root, setUp("html", "sequence"));
   assert.equal(code, 0, stderr);
   assert.match(stdout, /Project: Plain HTML/);
   assert.ok(existsSync(join(root, "sequence/manifest.json")));
@@ -75,7 +92,7 @@ test("Next.js App Router: component, and the Next.js 16 overflow-x: hidden fixed
     "app/globals.css": "html,\nbody {\n  max-width: 100vw;\n  overflow-x: hidden;\n}\n",
     "public/": "",
   });
-  const { code, stdout, stderr } = cli(root, ["--yes"]);
+  const { code, stdout, stderr } = cli(root, setUp("next", "public/sequence"));
   assert.equal(code, 0, stderr);
   assert.match(stdout, /Project: Next\.js \(App Router\) · TypeScript · npm/);
   assert.match(read(root, "components/HeroSequence.tsx"), /import manifest from "\.\.\/public\/sequence\/manifest\.json";/);
@@ -91,7 +108,7 @@ test("Angular: component and the element stylesheet added to angular.json", () =
     "src/": "",
     "public/": "",
   });
-  const { code, stderr } = cli(root, ["--yes"]);
+  const { code, stderr } = cli(root, setUp("angular", "public/sequence"));
   assert.equal(code, 0, stderr);
   assert.match(read(root, "src/app/hero-sequence/hero-sequence.ts"), /<scroll-sequence src="\/sequence\/manifest\.json"/);
   assert.deepEqual(JSON.parse(read(root, "angular.json")).projects.app.architect.build.options.styles, [
@@ -108,7 +125,7 @@ test("Vue: component, and the vite.config line printed instead of edited", () =>
     "src/": "",
     "public/": "",
   });
-  const { code, stdout, stderr } = cli(root, ["--yes"]);
+  const { code, stdout, stderr } = cli(root, setUp("vue", "public/sequence"));
   assert.equal(code, 0, stderr);
   assert.match(read(root, "src/components/HeroSequence.vue"), /<script setup>/);
   assert.match(stdout, /isCustomElement: \(tag\) => tag === "scroll-sequence"/);
@@ -130,7 +147,7 @@ test("React: installs @scrollframe/react for real with npm (the Windows shell pa
     "index.html": "<!doctype html>",
     "src/": "",
   });
-  const { code, stdout, stderr } = cli(root, ["--yes"]);
+  const { code, stdout, stderr } = cli(root, setUp("react", "public/sequence"));
   assert.equal(code, 0, stderr);
   assert.match(stdout, /Install @scrollframe\/react {2}\(npm install @scrollframe\/react\)/);
   assert.ok(JSON.parse(read(root, "package.json")).dependencies["@scrollframe/react"]);
