@@ -217,13 +217,13 @@ describe("runCli scaffold: flags and detection", () => {
   });
 
   it("puts the frames in sequence/ for a plain HTML site without a public folder", async () => {
-    const { calls, run } = harness(project({ "index.html": "" }));
+    const { calls, run } = harness(project({ "index.html": "<!doctype html>" }));
     expect(await run("hero.mp4")).toBe(0);
     expect(calls.generate[0]).toMatchObject({ out: "sequence", baseUrl: "/sequence" });
   });
 
   it("keeps an explicit -o and --base-url", async () => {
-    const { calls, run } = harness(project({ "index.html": "" }));
+    const { calls, run } = harness(project({ "index.html": "<!doctype html>" }));
     expect(await run("hero.mp4", "-o", "static/seq", "--base-url", "/assets/seq")).toBe(0);
     expect(calls.generate[0]).toMatchObject({ out: "static/seq", baseUrl: "/assets/seq" });
   });
@@ -400,7 +400,7 @@ describe("runCli scaffold: files that change or fail between the plan and the en
 
 describe("runCli scaffold: Angular and Vue end to end", () => {
   it("Angular: installs the element, writes the component and adds the stylesheet to angular.json", async () => {
-    const angularJson = JSON.stringify({ projects: { app: { architect: { build: { options: { styles: ["src/styles.css"] } } } } } }, null, 2) + "\n";
+    const angularJson = JSON.stringify({ projects: { app: { root: "", architect: { build: { options: { assets: [{ glob: "**/*", input: "public" }], styles: ["src/styles.css"] } } } } } }, null, 2) + "\n";
     const root = project({ "package.json": { dependencies: { "@angular/core": "22" } }, "angular.json": angularJson, "src/": "", "public/": "" });
     const { out, calls, run } = harness(root);
     expect(await run("hero.mp4")).toBe(0);
@@ -414,7 +414,7 @@ describe("runCli scaffold: Angular and Vue end to end", () => {
   });
 
   it("Vue: writes the component and prints the vite.config line", async () => {
-    const root = project({ "package.json": { dependencies: { vue: "3" } }, "src/": "", "public/": "" });
+    const root = project({ "package.json": { dependencies: { vue: "3", vite: "8", "@vitejs/plugin-vue": "6" } }, "index.html": "", "src/": "", "public/": "" });
     const { out, run } = harness(root);
     expect(await run("hero.mp4")).toBe(0);
     expect(readFileSync(join(root, "src/components/HeroSequence.vue"), "utf8")).toContain("<scroll-sequence src=");

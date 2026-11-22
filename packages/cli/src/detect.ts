@@ -1,20 +1,21 @@
-import { existsSync, readFileSync, statSync } from "node:fs";
+import { existsSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { UsageError } from "./options.js";
-import { detectUnsupported } from "./stacks.js";
+import { readText } from "./files.js";
+import { nameUnrecognised, recognise, type Manifest } from "./recognise.js";
 
-/** Frameworks the CLI writes a component for. `html` is any page without a supported framework. */
+/** Frameworks the CLI writes a component for. `html` is a folder of static pages. */
 export type Framework = "next" | "react" | "angular" | "vue" | "html";
 export type PackageManager = "pnpm" | "yarn" | "bun" | "npm";
 
 export interface ProjectInfo {
   root: string;
-  /** null when the project uses a framework the CLI does not support yet (see `unsupported`). */
+  /** null when the project is not positively recognised: only the frames are generated. */
   framework: Framework | null;
-  /** Display name of a recognised but unsupported framework, e.g. "Svelte". */
+  /** Display name of an unsupported framework, e.g. "Svelte"; null when recognised or unknown. */
   unsupported: string | null;
-  /** For an unsupported stack: what to do instead, when a plain HTML snippet is not enough. */
-  advice?: string;
+  /** When `framework` is null: what was missing to recognise the project. */
+  reason?: string;
   /** Next.js only: which router the project uses. */
   router: "app" | "pages" | null;
   /** The project keeps its sources under `src/`. */
@@ -37,10 +38,8 @@ const LOCKFILES: [file: string, manager: PackageManager][] = [
   ["package-lock.json", "npm"],
 ];
 
-interface PackageJson {
-  dependencies?: Record<string, string>;
-  devDependencies?: Record<string, string>;
-  packageManager?: string;
+interface PackageJson extends Manifest {
+  packageManager?: unknown;
 }
 
 const isDir = (path: string) => existsSync(path) && statSync(path).isDirectory();
@@ -48,22 +47,15 @@ const isDir = (path: string) => existsSync(path) && statSync(path).isDirectory()
 function readPackageJson(root: string): PackageJson | null {
   const path = join(root, "package.json");
   if (!existsSync(path)) return null;
+  const text = readText(path);
+  if (text === null) throw new UsageError(`Could not read ${path}: it is not a readable file.`);
   try {
-    return JSON.parse(readFileSync(path, "utf8")) as PackageJson;
+    const json: unknown = JSON.parse(text);
+    if (typeof json !== "object" || json === null) throw new Error("not a JSON object");
+    return json as PackageJson;
   } catch (error) {
     throw new UsageError(`Could not read ${path}: ${(error as Error).message}`);
   }
-}
-
-function detectFramework(root: string, deps: Record<string, string>): Pick<ProjectInfo, "framework" | "unsupported" | "router"> {
-  if ("next" in deps) {
-    const app = isDir(join(root, "app")) || isDir(join(root, "src/app"));
-    return { framework: "next", unsupported: null, router: app ? "app" : "pages" };
-  }
-  if ("@angular/core" in deps) return { framework: "angular", unsupported: null, router: null };
-  if ("vue" in deps) return { framework: "vue", unsupported: null, router: null };
-  if ("react" in deps) return { framework: "react", unsupported: null, router: null };
-  return { framework: "html", unsupported: null, router: null };
 }
 
 function detectPackageManager(root: string, pkg: PackageJson | null): PackageManager | null {
@@ -76,17 +68,18 @@ function detectPackageManager(root: string, pkg: PackageJson | null): PackageMan
 export function detectProject(root: string): ProjectInfo {
   const pkg = readPackageJson(root);
   const deps = { ...pkg?.dependencies, ...pkg?.devDependencies };
-  const stack = detectUnsupported(root, deps);
+  const found = recognise(root, pkg);
+  const named = found.framework === null ? nameUnrecognised(root, deps) : null;
   return {
     root,
-    ...(stack
-      ? { framework: null, unsupported: stack.name, advice: stack.advice, router: null }
-      : detectFramework(root, deps)),
+    ...(found.framework === null
+      ? { framework: null, unsupported: named?.name ?? null, reason: found.reason, router: null }
+      : { framework: found.framework, unsupported: null, router: found.router }),
     srcDir: isDir(join(root, "src")),
     typescript: existsSync(join(root, "tsconfig.json")) || "typescript" in deps,
     packageManager: detectPackageManager(root, pkg),
     hasPackageJson: pkg !== null,
     dependencies: Object.keys(deps),
-    publicDir: stack?.staticDir ?? (isDir(join(root, "public")) ? "public" : null),
+    publicDir: named?.staticDir ?? (isDir(join(root, "public")) ? "public" : null),
   };
 }

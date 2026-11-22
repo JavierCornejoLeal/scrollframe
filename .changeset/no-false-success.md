@@ -2,4 +2,9 @@
 "@scrollframe/cli": patch
 ---
 
-Stop reporting success for projects the CLI cannot set up. React Router, TanStack Start, Gatsby, Docusaurus, VitePress, Expo, Laravel with Inertia and other stacks are no longer set up as React or Vue, and WordPress, Laravel, Symfony, Django and other backends no longer get an HTML snippet with a URL they do not serve: only the frames are generated and the CLI ends saying so. Gatsby, Docusaurus, SvelteKit and Hugo get the frames in `static/` instead of their build folder. The plain HTML flow now warns that its URL assumes the site root.
+Only set up projects that are recognised with certainty, instead of taking any project with React or Vue for one and everything else for plain HTML:
+
+- Next.js with `app/` or `pages/`, React or Vue with Vite and a root `index.html`, Angular serving `public/` at the site root, and folders of static pages are set up.
+- Everything else only gets the frames, and the run ends saying it was not set up. This includes projects that used to be set up automatically: React or Vue without Vite, custom base paths, PHP and other backends. `--framework` forces the set-up.
+- The URL of a custom `-o` is computed from the folder the project serves.
+- In a terminal or with `--yes`, Gatsby, Docusaurus, SvelteKit and Hugo get the frames in `static/`. Without either, the output folder is unchanged and a note says to use `-o static/sequence`.

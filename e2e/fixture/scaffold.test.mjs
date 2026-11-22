@@ -84,7 +84,7 @@ test("Next.js App Router: component, and the Next.js 16 overflow-x: hidden fixed
 });
 
 test("Angular: component and the element stylesheet added to angular.json", () => {
-  const angularJson = { projects: { app: { architect: { build: { options: { styles: ["src/styles.css"] } } } } } };
+  const angularJson = { projects: { app: { root: "", architect: { build: { options: { assets: [{ glob: "**/*", input: "public" }], styles: ["src/styles.css"] } } } } } };
   const root = project("angular", {
     "package.json": { dependencies: { "@angular/core": "22.0.0", "@scrollframe/element": "*" } },
     "angular.json": angularJson,
@@ -102,7 +102,8 @@ test("Angular: component and the element stylesheet added to angular.json", () =
 
 test("Vue: component, and the vite.config line printed instead of edited", () => {
   const root = project("vue", {
-    "package.json": { dependencies: { vue: "3.5.0", "@scrollframe/element": "*" } },
+    "package.json": { dependencies: { vue: "3.5.0", "@scrollframe/element": "*" }, devDependencies: { vite: "*", "@vitejs/plugin-vue": "*" } },
+    "index.html": "<!doctype html>",
     "vite.config.js": "export default {};\n",
     "src/": "",
     "public/": "",
@@ -118,7 +119,17 @@ test("Vue: component, and the vite.config line printed instead of edited", () =>
 // shell path in spawnCommand. It installs the published package (not this build), so it checks
 // the install mechanics, not the package contents, and needs network access.
 test("React: installs @scrollframe/react for real with npm (the Windows shell path in CI)", () => {
-  const root = project("react", { "package.json": { name: "react-sample", private: true, dependencies: { react: "19.2.0" } }, "src/": "" });
+  const root = project("react", {
+    // Real dev dependencies, because npm install resolves every entry of package.json.
+    "package.json": {
+      name: "react-sample",
+      private: true,
+      dependencies: { react: "19.2.0", "react-dom": "19.2.0" },
+      devDependencies: { vite: "8.3.8", "@vitejs/plugin-react": "6.3.0" },
+    },
+    "index.html": "<!doctype html>",
+    "src/": "",
+  });
   const { code, stdout, stderr } = cli(root, ["--yes"]);
   assert.equal(code, 0, stderr);
   assert.match(stdout, /Install @scrollframe\/react {2}\(npm install @scrollframe\/react\)/);

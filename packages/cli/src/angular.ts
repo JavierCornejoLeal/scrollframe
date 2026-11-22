@@ -1,6 +1,6 @@
-import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { ProjectInfo } from "./detect.js";
+import { readText } from "./files.js";
 import type { FileEdit } from "./stylefix.js";
 
 const STYLESHEET = "@scrollframe/element/style.css";
@@ -29,7 +29,7 @@ export function planAngularStyles(project: ProjectInfo): { edit: FileEdit | null
   let before: string;
   let json: AngularJson;
   try {
-    before = readFileSync(join(project.root, path), "utf8");
+    before = readText(join(project.root, path)) ?? "";
     json = JSON.parse(before) as AngularJson;
   } catch {
     return { edit: null, note: `Could not read ${path}: ${ADD_BY_HAND}` };

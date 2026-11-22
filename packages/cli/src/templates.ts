@@ -1,7 +1,7 @@
-import { existsSync, readFileSync } from "node:fs";
 import { basename, join, posix } from "node:path";
 import { renderStageMarkup, type SequenceManifest } from "@scrollframe/core";
 import type { Framework, ProjectInfo } from "./detect.js";
+import { readText } from "./files.js";
 
 /** A component file the CLI writes into the user's project. */
 export interface ComponentFile {
@@ -128,13 +128,8 @@ const VITE_CONFIGS = ["vite.config.ts", "vite.config.js", "vite.config.mjs", "vi
 /** The project's vite.config already declares <scroll-sequence> as a custom element. */
 function viteKnowsElement(root: string): boolean {
   return VITE_CONFIGS.some((file) => {
-    const path = join(root, file);
-    try {
-      const config = existsSync(path) ? readFileSync(path, "utf8") : "";
-      return config.includes("isCustomElement") && config.includes("scroll-sequence");
-    } catch {
-      return false;
-    }
+    const config = readText(join(root, file)) ?? "";
+    return config.includes("isCustomElement") && config.includes("scroll-sequence");
   });
 }
 

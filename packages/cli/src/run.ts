@@ -1,7 +1,8 @@
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { createInterface } from "node:readline";
 import { dirname, join } from "node:path";
 import { detectProject } from "./detect.js";
+import { readText } from "./files.js";
 import { generateSequence } from "./generate.js";
 import { spawnCommand } from "./install.js";
 import type { SequenceManifest } from "@scrollframe/core";
@@ -176,12 +177,7 @@ export async function runCli(argv: string[], io: CliIO, overrides: Partial<RunDe
   }
   for (const edit of plan.edits) {
     const target = join(deps.cwd, edit.path);
-    let current: string | null;
-    try {
-      current = readFileSync(target, "utf8");
-    } catch {
-      current = null; // deleted or unreadable since the plan
-    }
+    const current = readText(target); // null: deleted, unreadable or not a file since the plan
     // Only apply the change to the exact file content the user saw in the plan.
     if (current !== edit.before) {
       io.stderr.write(`${edit.path} changed after the plan was made; it was not modified. ${edit.manual}\n`);
@@ -195,6 +191,6 @@ export async function runCli(argv: string[], io: CliIO, overrides: Partial<RunDe
       exitCode = 1;
     }
   }
-  if (plan.closing.length > 0) io.stdout.write(`\n${plan.closing.join("\n")}\n`);
+  if (plan.closing?.length) io.stdout.write(`\n${plan.closing.join("\n")}\n`);
   return exitCode;
 }

@@ -43,23 +43,23 @@ describe("detectProject: framework", () => {
   });
 
   it("detects React (not Next.js), also from devDependencies", () => {
-    const root = project({ "package.json": { name: "app", devDependencies: { react: "19.0.0", vite: "8.0.0" } }, "src/": "" });
+    const root = project({ "package.json": { name: "app", devDependencies: { react: "19.0.0", "react-dom": "19.0.0", vite: "8.0.0", "@vitejs/plugin-react": "5.0.0" } }, "index.html": "", "src/": "" });
     expect(detectProject(root)).toMatchObject({ framework: "react", router: null, srcDir: true });
   });
 
   it("detects Angular", () => {
-    const root = project({ "package.json": pkg({ "@angular/core": "22.0.0" }), "angular.json": {}, "src/": "" });
+    const root = project({ "package.json": pkg({ "@angular/core": "22.0.0" }), "angular.json": { projects: { app: { projectType: "application", root: "", architect: { build: { options: { assets: [{ glob: "**/*", input: "public" }] } } } } } }, "src/": "" });
     expect(detectProject(root)).toMatchObject({ framework: "angular" });
   });
 
   it("detects Vue", () => {
-    const root = project({ "package.json": pkg({ vue: "3.5.0" }), "src/": "" });
+    const root = project({ "package.json": pkg({ vue: "3.5.0", vite: "8.0.0", "@vitejs/plugin-vue": "6.0.0" }), "index.html": "", "src/": "" });
     expect(detectProject(root)).toMatchObject({ framework: "vue" });
   });
 
-  it("falls back to plain HTML without a package.json or without a known framework", () => {
+  it("is plain HTML only with an index.html page and no package.json", () => {
     expect(detectProject(project({ "index.html": "<!doctype html>" }))).toMatchObject({ framework: "html", hasPackageJson: false });
-    expect(detectProject(project({ "package.json": pkg({ lodash: "4.0.0" }) }))).toMatchObject({ framework: "html", hasPackageJson: true });
+    expect(detectProject(project({ "package.json": pkg({ lodash: "4.0.0" }) }))).toMatchObject({ framework: null, hasPackageJson: true });
   });
 
   it("names frameworks it does not support yet instead of guessing", () => {

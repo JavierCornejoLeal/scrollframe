@@ -75,15 +75,19 @@ Use `onProgress={(progress, frame) => ...}` when you need it in JavaScript.
 
 Run it once with `npx @scrollframe/cli <video>` (or `pnpm dlx`), or install it (`npm i -D @scrollframe/cli`) and call the `scrollframe` command from your scripts. Nothing happens at install time: everything happens when the command runs, after you confirm.
 
-| Project | Package installed | File written |
-| --- | --- | --- |
-| Next.js (App or Pages Router) | `@scrollframe/react` | `components/HeroSequence.tsx` (or `src/components/`, `.jsx` without TypeScript) |
-| React | `@scrollframe/react` | `src/components/HeroSequence.tsx` |
-| Angular | `@scrollframe/element` | `src/app/hero-sequence/hero-sequence.ts`, and the stylesheet added to `angular.json` |
-| Vue | `@scrollframe/element` | `src/components/HeroSequence.vue`; the `vite.config` line to add is printed |
-| Plain HTML served from the site root | none (CDN) | `hero-sequence.html`: CDN lines and the block with the poster already rendered |
+It only sets up projects it recognises with certainty:
 
-The component is named after the video (`hero.mp4` → `HeroSequence`), and the CLI prints the exact import for your main page. Other stacks are recognised but not supported yet, and the CLI says so instead of setting them up: only the frames are generated. These include WordPress, Laravel, Symfony, Django, Flask, Rails, Astro, Svelte, Nuxt, React Router, TanStack Start, Gatsby, Docusaurus, VitePress and Expo. For any other site served from a subfolder, pass `--base-url`.
+| Project | Recognised by | Package installed | File written |
+| --- | --- | --- | --- |
+| Next.js (App or Pages Router) | `next` plus `app/` or `pages/`, no `basePath` | `@scrollframe/react` | `components/HeroSequence.tsx` (or `src/components/`, `.jsx` without TypeScript) |
+| React | Vite, its React plugin and a root `index.html`, default `base`, `root` and `publicDir` | `@scrollframe/react` | `src/components/HeroSequence.tsx` |
+| Angular | one app whose `angular.json` serves `public/` at the site root | `@scrollframe/element` | `src/app/hero-sequence/hero-sequence.ts`, and the stylesheet added to `angular.json` |
+| Vue | Vite, its Vue plugin and a root `index.html`, default `base`, `root` and `publicDir` | `@scrollframe/element` | `src/components/HeroSequence.vue`; the `vite.config` line to add is printed |
+| Plain HTML served from the site root | an `index.html` page, no `package.json`, no server code and no project around it | none (CDN) | `hero-sequence.html`: CDN lines and the block with the poster already rendered |
+
+Anything else (WordPress, PHP, other backends and meta-frameworks, webpack, custom paths) only gets the frames, and the CLI ends saying it was not set up. `--framework` forces the set-up, without those checks: then pass `-o` and `--base-url` for where your site serves the frames.
+
+The component is named after the video (`hero.mp4` → `HeroSequence`), and the CLI prints the exact import for your main page.
 
 It is careful with your project:
 
