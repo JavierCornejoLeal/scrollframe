@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { UsageError } from "./options.js";
+import { detectUnsupported } from "./stacks.js";
 
 /** Frameworks the CLI writes a component for. `html` is any page without a supported framework. */
 export type Framework = "next" | "react" | "angular" | "vue" | "html";
@@ -12,6 +13,8 @@ export interface ProjectInfo {
   framework: Framework | null;
   /** Display name of a recognised but unsupported framework, e.g. "Svelte". */
   unsupported: string | null;
+  /** For an unsupported stack: what to do instead, when a plain HTML snippet is not enough. */
+  advice?: string;
   /** Next.js only: which router the project uses. */
   router: "app" | "pages" | null;
   /** The project keeps its sources under `src/`. */
@@ -22,19 +25,9 @@ export interface ProjectInfo {
   hasPackageJson: boolean;
   /** Names of every dependency and devDependency. */
   dependencies: string[];
-  /** Folder served at the site root (`public`), or null when there is none. */
+  /** Folder served at the site root (`public`, or `static` for some stacks), or null when there is none. */
   publicDir: string | null;
 }
-
-/** Checked before React and Vue: these meta-frameworks also depend on them but lay files out differently. */
-const UNSUPPORTED: [dependency: string, name: string][] = [
-  ["nuxt", "Nuxt"],
-  ["@remix-run/react", "Remix"],
-  ["@sveltejs/kit", "SvelteKit"],
-  ["svelte", "Svelte"],
-  ["astro", "Astro"],
-  ["solid-js", "Solid"],
-];
 
 const LOCKFILES: [file: string, manager: PackageManager][] = [
   ["pnpm-lock.yaml", "pnpm"],
@@ -63,8 +56,6 @@ function readPackageJson(root: string): PackageJson | null {
 }
 
 function detectFramework(root: string, deps: Record<string, string>): Pick<ProjectInfo, "framework" | "unsupported" | "router"> {
-  const unsupported = UNSUPPORTED.find(([dependency]) => dependency in deps);
-  if (unsupported) return { framework: null, unsupported: unsupported[1], router: null };
   if ("next" in deps) {
     const app = isDir(join(root, "app")) || isDir(join(root, "src/app"));
     return { framework: "next", unsupported: null, router: app ? "app" : "pages" };
@@ -85,14 +76,17 @@ function detectPackageManager(root: string, pkg: PackageJson | null): PackageMan
 export function detectProject(root: string): ProjectInfo {
   const pkg = readPackageJson(root);
   const deps = { ...pkg?.dependencies, ...pkg?.devDependencies };
+  const stack = detectUnsupported(root, deps);
   return {
     root,
-    ...detectFramework(root, deps),
+    ...(stack
+      ? { framework: null, unsupported: stack.name, advice: stack.advice, router: null }
+      : detectFramework(root, deps)),
     srcDir: isDir(join(root, "src")),
     typescript: existsSync(join(root, "tsconfig.json")) || "typescript" in deps,
     packageManager: detectPackageManager(root, pkg),
     hasPackageJson: pkg !== null,
     dependencies: Object.keys(deps),
-    publicDir: isDir(join(root, "public")) ? "public" : null,
+    publicDir: stack?.staticDir ?? (isDir(join(root, "public")) ? "public" : null),
   };
 }

@@ -81,9 +81,9 @@ Run it once with `npx @scrollframe/cli <video>` (or `pnpm dlx`), or install it (
 | React | `@scrollframe/react` | `src/components/HeroSequence.tsx` |
 | Angular | `@scrollframe/element` | `src/app/hero-sequence/hero-sequence.ts`, and the stylesheet added to `angular.json` |
 | Vue | `@scrollframe/element` | `src/components/HeroSequence.vue`; the `vite.config` line to add is printed |
-| Plain HTML (PHP, Django, Rails, static) | none (CDN) | `hero-sequence.html`: CDN lines and the block with the poster already rendered |
+| Plain HTML served from the site root | none (CDN) | `hero-sequence.html`: CDN lines and the block with the poster already rendered |
 
-The component is named after the video (`hero.mp4` → `HeroSequence`), and the CLI prints the exact import for your main page. Svelte, Astro, Nuxt and Remix are recognised but not supported yet: only the frames are generated, or use `--framework html`.
+The component is named after the video (`hero.mp4` → `HeroSequence`), and the CLI prints the exact import for your main page. Other stacks are recognised but not supported yet, and the CLI says so instead of setting them up: only the frames are generated. These include WordPress, Laravel, Symfony, Django, Flask, Rails, Astro, Svelte, Nuxt, React Router, TanStack Start, Gatsby, Docusaurus, VitePress and Expo. For any other site served from a subfolder, pass `--base-url`.
 
 It is careful with your project:
 
@@ -142,7 +142,7 @@ Or install ffmpeg on your system, or pass `--ffmpeg <path>` / set `FFMPEG_PATH`.
 
 ## Any framework or plain HTML: `<scroll-sequence>`
 
-`@scrollframe/element` is a standard custom element, so it works wherever HTML does: Angular, Vue, Svelte, Astro, or pages rendered by PHP, Django, Rails or a static site. It renders in the light DOM: overlay children stay real, indexable HTML, styled by your own CSS. Children are never moved, so framework-managed content keeps working.
+`@scrollframe/element` is a standard custom element, so it can be used wherever you control the HTML. It is tested in Angular, Vue and static HTML; in other frameworks and server-rendered sites, make sure `src` points at the URL where your site serves `manifest.json`. It renders in the light DOM: overlay children stay real, indexable HTML, styled by your own CSS. Children are never moved, so framework-managed content keeps working.
 
 ### Plain HTML (no build step)
 

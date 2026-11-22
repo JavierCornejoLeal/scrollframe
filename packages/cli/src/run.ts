@@ -113,7 +113,7 @@ export async function runCli(argv: string[], io: CliIO, overrides: Partial<RunDe
     io.stdout.write(reactSnippet(result.manifestPath));
     let hint: string | null = null;
     try {
-      hint = setupHint(deps.detect(deps.cwd));
+      hint = setupHint(deps.detect(deps.cwd), options.out);
     } catch {
       // A broken package.json must not break generating frames.
     }
@@ -195,5 +195,6 @@ export async function runCli(argv: string[], io: CliIO, overrides: Partial<RunDe
       exitCode = 1;
     }
   }
+  if (plan.closing.length > 0) io.stdout.write(`\n${plan.closing.join("\n")}\n`);
   return exitCode;
 }

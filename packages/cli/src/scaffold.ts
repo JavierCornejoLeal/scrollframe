@@ -58,20 +58,35 @@ export interface ScaffoldPlan {
   /** Changes to the user's stylesheets that keep the sequence pinned (see stylefix.ts). */
   edits: FileEdit[];
   notes: string[];
+  /** Printed last, so what was not set up is not lost above the progress output. */
+  closing: string[];
 }
 
 export function planScaffold(project: ProjectInfo, generate: GenerateOptions, flags: ScaffoldFlags): ScaffoldPlan {
   const framework = flags.framework ?? project.framework;
   const notes: string[] = [];
+  const closing: string[] = [];
   if (framework === null) {
-    notes.push(
-      `${project.unsupported} is not supported yet: only the frames will be generated. Use --framework html for a plain HTML snippet.`,
-    );
+    const advice = project.advice ?? "Use --framework html for a plain HTML snippet.";
+    notes.push(`${project.unsupported} is not supported yet: only the frames will be generated. ${advice}`);
+    closing.push(`Not set up: ${project.unsupported} is not supported yet. Only the frames were generated.`);
   }
 
-  let options = generate;
-  if (framework === "html" && project.publicDir === null && !flags.outGiven) {
-    options = { ...options, out: "sequence", baseUrl: flags.baseUrlGiven ? options.baseUrl : deriveBaseUrl("sequence") };
+  let out: string | null = null;
+  if (!flags.outGiven) {
+    if (project.publicDir !== null && project.publicDir !== "public") out = `${project.publicDir}/sequence`;
+    else if (framework === "html" && project.publicDir === null) out = "sequence";
+  }
+  const options =
+    out === null ? generate : { ...generate, out, baseUrl: flags.baseUrlGiven ? generate.baseUrl : deriveBaseUrl(out) };
+
+  if (framework === "html" && !flags.baseUrlGiven) {
+    const root = project.publicDir === null ? "this folder" : `${project.publicDir}/`;
+    const note =
+      `The frames are loaded from ${options.baseUrl}, which only works if ${root} is the site root. ` +
+      `In a subfolder, run it with --base-url, e.g. --base-url /my-folder${options.baseUrl}.`;
+    notes.push(note);
+    closing.push(note);
   }
 
   const pkg = framework === null ? null : runtimePackage(framework);
@@ -102,7 +117,7 @@ export function planScaffold(project: ProjectInfo, generate: GenerateOptions, fl
     if (edit) edits.unshift(edit);
     if (note) notes.push(note);
   }
-  return { project, framework, generate: options, install, component, edits, notes };
+  return { project, framework, generate: options, install, component, edits, notes, closing };
 }
 
 export function describeProject(project: ProjectInfo, framework: Framework | null): string {
@@ -114,7 +129,7 @@ export function describeProject(project: ProjectInfo, framework: Framework | nul
 
 /** Frames only, for a project that could not be read (e.g. a package.json in the middle of an edit). */
 export function framesOnlyPlan(generate: GenerateOptions, reason: string): ScaffoldPlan {
-  return { project: null, framework: null, generate, install: null, component: null, edits: [], notes: [`${reason}\nOnly the frames will be generated.`] };
+  return { project: null, framework: null, generate, install: null, component: null, edits: [], closing: [], notes: [`${reason}\nOnly the frames will be generated.`] };
 }
 
 export function formatPlan(plan: ScaffoldPlan): string {
@@ -131,8 +146,14 @@ export function formatPlan(plan: ScaffoldPlan): string {
   return `${lines.join("\n")}\n\n`;
 }
 
-/** The non-interactive hint, or null when there is nothing to set up. */
-export function setupHint(project: ProjectInfo): string | null {
-  if (project.framework === null) return null;
+/** What the non-interactive output adds: how to set the project up, or why it cannot be. */
+export function setupHint(project: ProjectInfo, out: string): string | null {
+  if (project.framework === null) {
+    if (project.unsupported === null) return null;
+    const note = `Note: ${project.unsupported} is not supported yet, so the example above may not work in this project.`;
+    const dir = project.publicDir;
+    const inStaticDir = dir === null || dir === "public" || out.replace(/\\/g, "/").replace(/^\.\//, "").startsWith(`${dir}/`);
+    return inStaticDir ? `${note}\n` : `${note} It serves static files from ${dir}/: use -o ${dir}/sequence.\n`;
+  }
   return `Tip: run it in a terminal, or add --yes, to also set up the component for this ${HINT_LABELS[project.framework]}.\n`;
 }

@@ -11,7 +11,7 @@ Branch: `feat/more-stacks` · Baseline: `9587ac1` (0.3.0, published) · Delivery
 
 ## Tasks
 
-- [ ] T0 (S2, S3) stop wrong successes in 0.3.0: meta-frameworks taken for React/Vue, native apps, build-output folders
+- [x] T0 (S2, S3) stop wrong successes in 0.3.0: meta-frameworks taken for React/Vue, native apps, build-output folders
 - [ ] T1 (S1) PHP: document root and subfolder
 - [ ] T2 (S1) WordPress: classic theme, block theme, install in a subfolder
 - [ ] T3 (S1) Astro
@@ -33,3 +33,7 @@ Branch: `feat/more-stacks` · Baseline: `9587ac1` (0.3.0, published) · Delivery
 - L4 (2026-11-22): T1/T2 RED with the published CLI 0.3.0, WordPress 7.1.5 + PHP 8.3.36 (Playground CLI 3.1.65): run inside a theme or a PHP subfolder it exits 0 and writes `/sequence/manifest.json`, which is a 404 (no poster, no frames) in Chromium, Firefox and WebKit. The same frames with the correct --base-url work in all three (frame 15/30 at 50%, stage pinned).
 - L5 (2026-11-22): T2 throwaway prototype (not product code): a plugin with a shortcode that resolves its URL with plugins_url() and passes `base-url`. 9/9 runs pass: Twenty Twenty-Five, Twenty Twenty-One and WordPress under /blog, each in the three engines (poster, frames, pinned at top 0, full width, no 4xx, no warnings). Not checked yet: overlay hit test, block editor, Elementor, caching/optimizer plugins, real MySQL install, older WordPress/PHP.
 - L6 (2026-11-22): open owner decision: WordPress output as a plugin (recommended: survives theme changes, any theme) or as a theme template part. T0 still needs real-project confirmation per stack.
+- L7 (2026-11-22): "Si, dale con el plugin, vamos paso a paso". Decision for L6: WordPress output is a plugin with a shortcode. One task at a time with a check-in, starting with T0 on `fix/cli-false-success` (patch release).
+- L8 (2026-11-22): T0 RED: published 0.3.0 on 21 real cases (official scaffolders, starter repositories, a WordPress download) exits 0, 18 of them setting the project up as React, Vue or plain HTML; 43 new tests failed. GREEN: `stacks.ts` names those stacks before React/Vue/HTML, the run ends with "Not set up: ...", Gatsby/Docusaurus/SvelteKit/Hugo frames go to static/, plain HTML warns that its URL assumes the site root, README no longer promises untested backends. Packed CLI: 21/21 end with "Not set up". Controls (Next, Vite React, Angular, Vue, static HTML): written files identical to 0.3.0, output identical except the new HTML note, non-interactive output identical. Seven mutations fail tests. vitest 271/271, typecheck ok, CLI e2e 15/15, publint 4/4. Windows not run yet (no CI until pushed).
+- L9 (2026-11-22): T0 limits: Flask, Rails, Jekyll, Spring Boot, ASP.NET, VitePress, Qwik, Quasar, Vue CLI, CRA, Analog, Electron and legacy Angular are covered by fixtures only. Plain PHP in a subfolder only gets the note (fix is T1). Not detected: custom webpack React, Next `basePath`, Vite `base`.
+- L10 (2026-11-22): the acknowledgement of the docs review of 77b344d (lineage review-d059868fdeb9bbef) was denied by the auto-mode classifier and left to the owner; not retried.
