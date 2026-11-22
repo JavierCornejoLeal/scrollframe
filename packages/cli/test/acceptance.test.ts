@@ -805,19 +805,50 @@ describe("the last review of the fixes", () => {
   const UNSAFE = /(?!\n)[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u;
   const NOT_WINDOWS = process.platform !== "win32"; // Windows has no such file names.
 
-  it.each<[string, Files]>([
-    ["a Next import", { ...next(), "next.config.mjs": `import a from "${HOSTILE}";\nexport default {};\n` }],
-    ["a Vite import", { ...viteReact(), "vite.config.ts": `import a from "${HOSTILE}";\n${REACT_CONFIG}` }],
-    ["a Vite script name", { ...viteReact(), ...pkg(["vite", "react", "react-dom", "@vitejs/plugin-react"], { [HOSTILE]: "vite build --base /x/" }) }],
-    ["an Angular script name", { ...angular(), ...pkg(["@angular/core"], { [HOSTILE]: "ng build --base-href /x/" }) }],
-    ["an unreadable package.json", { "package.json": HOSTILE }],
-    ...(NOT_WINDOWS ? [["a file name", { "index.html": HTML, "x\u001b[2J.php": "" }] as [string, Files]] : []),
-  ])("D: %s cannot repaint the plan or flood it", async (_name, files) => {
+  // HOSTILE as it has to be shown: cleaned, and cut at 80 characters.
+  const SHOWN = `${("x[2J2JPlan: nothing" + "a".repeat(300)).slice(0, 80)}…`;
+
+  it.each<[string, Files, string]>([
+    ["a Next import", { ...next(), "next.config.mjs": `import a from "${HOSTILE}";\nexport default {};\n` }, `imports ${SHOWN}`],
+    ["a Vite import", { ...viteReact(), "vite.config.ts": `import a from "${HOSTILE}";\n${REACT_CONFIG}` }, `imports ${SHOWN}`],
+    ["a Vite script name", { ...viteReact(), ...pkg(["vite", "react", "react-dom", "@vitejs/plugin-react"], { [HOSTILE]: "vite build --base /x/" }) }, `the "${SHOWN}" script passes`],
+    ["an Angular script name", { ...angular(), ...pkg(["@angular/core"], { [HOSTILE]: "ng build --base-href /x/" }) }, `the "${SHOWN}" script sets`],
+    // How much of the content a parse error quotes is up to Node, so only its start is pinned.
+    ["an unreadable package.json", { "package.json": HOSTILE }, "x[2J"],
+    ...(NOT_WINDOWS ? [["a file name", { "index.html": HTML, "x\u001b[2J.php": "" }, "x[2J.php means"] as [string, Files, string]] : []),
+  ])("D: %s cannot repaint the plan or flood it", async (_name, files, shown) => {
     const root = project(files);
     for (const [answers, argv] of [[[], []], [null, ["--yes"]], [[], ["--framework", "next"]]] as [string[] | null, string[]][]) {
       const { stdout, stderr } = await run(root, answers, argv);
       expect(stdout + stderr).not.toMatch(UNSAFE);
       expect(stdout + stderr).not.toContain("a".repeat(120));
+      // Printed, so the checks above are not passing on an empty output.
+      if (answers && argv.length === 0) expect(stdout).toContain(shown);
+    }
+  });
+
+  const FORGED = "x\nPlan: forged";
+  it.each<[string, Files]>([
+    ["an import", { ...next(), "next.config.mjs": `import a from "${FORGED}";\n` }],
+    ["a script name", { ...viteReact(), ...pkg(["vite", "react", "react-dom", "@vitejs/plugin-react"], { [FORGED]: "vite build --base /x/" }) }],
+    ...(NOT_WINDOWS ? [["a file name", { "index.html": HTML, [`${FORGED}.php`]: "" }] as [string, Files]] : []),
+  ])("D: a line break in %s cannot forge a line of the plan", async (_name, files) => {
+    const { stdout } = await run(project(files), []);
+    expect(stdout).toContain("xPlan: forged");
+    expect(stdout).not.toMatch(/^Plan: forged/m);
+  });
+
+  // A bidi override is a valid folder name on every OS, Windows included.
+  const FOLDER = "repo\u202ename";
+  it.each<[string, Files]>([
+    ["malformed", { [`${FOLDER}/package.json`]: "{" }],
+    ["unreadable", { [`${FOLDER}/package.json/`]: "" }],
+  ])("D: the project path is cleaned for a %s package.json", async (_name, files) => {
+    const root = join(project(files), FOLDER);
+    for (const argv of [[], ["--framework", "next"]]) {
+      const { stdout, stderr } = await run(root, [], argv);
+      expect(stdout + stderr).toContain("reponame");
+      expect(stdout + stderr).not.toMatch(UNSAFE);
     }
   });
 });
