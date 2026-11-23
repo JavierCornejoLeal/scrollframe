@@ -101,3 +101,22 @@ describe("renderStageMarkup", () => {
     expect(html).toContain('src="https://cdn.example.com/seq/desktop/poster.webp"');
   });
 });
+
+describe("poster of an adaptive manifest", () => {
+  it("picks the portrait crops by the shape of the screen, not only its width", () => {
+    const cropped = parseManifest({
+      ...manifest,
+      sets: [
+        { name: "mobile", maxViewportWidth: 767, maxAspectRatio: 0.6, width: 1296, height: 2160, dir: "mobile" },
+        { name: "tablet", maxViewportWidth: 1023, maxAspectRatio: 0.8, width: 1440, height: 1800, dir: "tablet" },
+        { name: "desktop", maxViewportWidth: 1920, width: 1920, height: 1080, dir: "desktop" },
+        { name: "large", maxViewportWidth: null, width: 2560, height: 1440, dir: "large" },
+      ],
+    });
+    expect(posterImage(cropped).sources.map((source) => source.media)).toEqual([
+      "(max-aspect-ratio: 600/1000)",
+      "(max-aspect-ratio: 800/1000)",
+      "(max-width: 1920px)",
+    ]);
+  });
+});

@@ -2,6 +2,7 @@ import {
   STAGE_STYLE,
   ScrollSequence as Engine,
   parseManifest,
+  spanPage,
   renderPosterMarkup,
   type SequenceManifest,
 } from "@scrollframe/core";
@@ -23,7 +24,7 @@ export interface ScrollSequenceErrorDetail {
   error: Error;
 }
 
-const OBSERVED = ["src", "alt", "base-url", "priority", "scroll-length"] as const;
+const OBSERVED = ["src", "alt", "base-url", "priority", "scroll-length", "full-width"] as const;
 
 /** Lets the module load where there is no DOM (SSR); the class is only usable in a browser. */
 const Base = (typeof HTMLElement === "undefined" ? class {} : HTMLElement) as typeof HTMLElement;
@@ -38,6 +39,7 @@ const Base = (typeof HTMLElement === "undefined" ? class {} : HTMLElement) as ty
 export function scrollSequenceStyles(tag: string = DEFAULT_TAG_NAME): string {
   return (
     `${tag}{display:grid;position:relative;height:var(--sf-scroll-length,300vh)}` +
+    `${tag}:not([full-width="false"]){width:100vw;max-width:none;flex-shrink:0;box-sizing:border-box;margin-left:calc(50% - 50vw);margin-right:calc(50% - 50vw)}` +
     `${tag}>*{grid-area:1/1;align-self:start;position:sticky;top:0}` +
     `${tag}>[data-sf-stage]>canvas{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;pointer-events:none}`
   );
@@ -72,6 +74,8 @@ export class ScrollSequenceElement extends Base {
   #refreshQueued = false;
   /** True between connectedCallback and disconnectedCallback. */
   #connected = false;
+  /** Spans the page when there is no engine to do it (the manifest failed). */
+  #unspan: (() => void) | null = null;
 
   constructor() {
     super();
@@ -132,6 +136,8 @@ export class ScrollSequenceElement extends Base {
     this.#abort = null;
     this.#engine?.destroy();
     this.#engine = null;
+    this.#unspan?.();
+    this.#unspan = null;
   }
 
   #load(): void {
@@ -172,6 +178,11 @@ export class ScrollSequenceElement extends Base {
 
   #mount(manifest: SequenceManifest): void {
     const baseUrl = this.getAttribute("base-url") ?? undefined;
+    if (!this.getAttribute("scroll-length")) {
+      // The manifest's length, or the default for a sequence without one.
+      if (manifest.scrollLength) this.style.setProperty("--sf-scroll-length", manifest.scrollLength);
+      else this.style.removeProperty("--sf-scroll-length");
+    }
     const stage = this.#ensureStage();
     this.#renderPoster(
       stage,
@@ -186,6 +197,7 @@ export class ScrollSequenceElement extends Base {
       canvas: this.#ensureCanvas(stage),
       manifest,
       baseUrl,
+      fullWidth: this.getAttribute("full-width") !== "false",
       onProgress: (progress, frame) => this.#emit<ScrollSequenceProgressDetail>("sf-progress", { progress, frame }),
       onReady: () => this.#emit("sf-ready", undefined),
     }).start();
@@ -231,13 +243,18 @@ export class ScrollSequenceElement extends Base {
     return canvas;
   }
 
+  /**
+   * The attribute wins. Without it, the length the page wrote (the generated snippets do) stays
+   * until the manifest arrives, so the page does not jump while it loads.
+   */
   #applyScrollLength(): void {
     const length = this.getAttribute("scroll-length");
     if (length) this.style.setProperty("--sf-scroll-length", length);
-    else this.style.removeProperty("--sf-scroll-length");
   }
 
   #fail(error: unknown): void {
+    // The stylesheet's 100vw counts the scrollbar: without an engine, span the page exactly here.
+    if (!this.#unspan && !this.#engine && this.getAttribute("full-width") !== "false") this.#unspan = spanPage(this);
     const detail: ScrollSequenceErrorDetail = { error: error instanceof Error ? error : new Error(String(error)) };
     this.#emit("sf-error", detail);
   }

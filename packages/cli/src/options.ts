@@ -13,9 +13,9 @@ and the URL, and it installs the package and writes the component.
 Options:
   -o, --out <dir>         Output folder (default: public/sequence)
   -b, --base-url <url>    Public URL of the output folder (default: derived from --out)
-  -f, --frames <n>        Frames to extract, 2-600, capped at the video's own (default: 120)
-  -q, --quality <0-100>   WebP quality (default: 80)
-  -w, --widths <m,t,d>    Mobile, tablet and desktop widths (default: 720,1280,1920)
+  -f, --frames <n>        Frames, 2-20000, capped at the video's own (default: 15/s, at least 120)
+  -q, --quality <0-100>   WebP quality (default: 82-84, or 80 with --widths)
+  -w, --widths <m,t,d>    Three uncropped widths (default: up to 2560, portrait crops for phones)
       --lossless          Lossless WebP (much heavier, hurts LCP; not recommended)
       --ffmpeg <path>     ffmpeg binary (default: FFMPEG_PATH, bundled ffmpeg-static, then PATH)
       --force             Overwrite a non-empty output folder
@@ -36,6 +36,11 @@ export interface GenerateOptions {
   lossless: boolean;
   ffmpeg?: string;
   force: boolean;
+  /**
+   * What was left to follow the video; `frames`, `widths` and `quality` then only hold fallbacks.
+   * Without it, those three are used as they are.
+   */
+  auto?: { frames: boolean; sets: boolean; quality: boolean };
 }
 
 /** How the project is set up after the frames. Absent flags mean "detect" / "ask". */
@@ -60,6 +65,16 @@ const BREAKPOINTS = [
   { name: "tablet", maxViewportWidth: 1279 },
   { name: "desktop", maxViewportWidth: null },
 ] as const;
+
+const MAX_FRAMES = 20000;
+/** Frames per second of video when the video decides; never fewer than MIN_FRAMES in all. */
+export const FRAMES_PER_SECOND = 15;
+/** What --frames, --quality and --widths fall back to when the video does not decide them. */
+export const DEFAULT_FRAMES = 120;
+export const DEFAULT_QUALITY = 80;
+export const DEFAULT_WIDTHS = "720,1280,1920";
+/** Short videos still get this many frames (or all they have), as 0.4.0 did. */
+export const MIN_FRAMES = 120;
 
 function toInt(value: string, flag: string, min: number, max: number): number {
   const n = Number(value);
@@ -91,9 +106,9 @@ export function parseCommandLine(argv: string[]): { generate: GenerateOptions; s
     options: {
       out: { type: "string", short: "o", default: "public/sequence" },
       "base-url": { type: "string", short: "b" },
-      frames: { type: "string", short: "f", default: "120" },
-      quality: { type: "string", short: "q", default: "80" },
-      widths: { type: "string", short: "w", default: "720,1280,1920" },
+      frames: { type: "string", short: "f" },
+      quality: { type: "string", short: "q" },
+      widths: { type: "string", short: "w" },
       lossless: { type: "boolean", default: false },
       ffmpeg: { type: "string" },
       force: { type: "boolean", default: false },
@@ -110,7 +125,7 @@ export function parseCommandLine(argv: string[]): { generate: GenerateOptions; s
   if (!input) throw new UsageError("Missing <video>. Run `scrollframe --help`.");
   if (extra.length > 0) throw new UsageError(`Unexpected arguments: ${extra.join(" ")}`);
 
-  const widths = values.widths.split(",").map((w) => toInt(w.trim(), "--widths", 16, 7680));
+  const widths = (values.widths ?? DEFAULT_WIDTHS).split(",").map((w) => toInt(w.trim(), "--widths", 16, 7680));
   if (widths.length !== 3) throw new UsageError("--widths needs exactly three values: mobile,tablet,desktop.");
   if (!(widths[0]! < widths[1]! && widths[1]! < widths[2]!)) {
     throw new UsageError("--widths must be ascending: mobile < tablet < desktop.");
@@ -129,12 +144,17 @@ export function parseCommandLine(argv: string[]): { generate: GenerateOptions; s
       input,
       out: values.out,
       baseUrl: values["base-url"] ?? deriveBaseUrl(values.out),
-      frames: toInt(values.frames, "--frames", 2, 600),
-      quality: toInt(values.quality, "--quality", 0, 100),
+      frames: toInt(values.frames ?? String(DEFAULT_FRAMES), "--frames", 2, MAX_FRAMES),
+      quality: toInt(values.quality ?? String(DEFAULT_QUALITY), "--quality", 0, 100),
       widths: widths as [number, number, number],
       lossless: values.lossless,
       ffmpeg: values.ffmpeg,
       force: values.force,
+      auto: {
+        frames: values.frames === undefined,
+        sets: values.widths === undefined,
+        quality: values.quality === undefined && values.widths === undefined,
+      },
     },
     scaffold: {
       yes: values.yes,
@@ -173,6 +193,70 @@ export function availableFrames(duration: number, rate: number | null): number {
 export function samplingFps(frames: number, duration: number): number {
   if (duration <= 0) throw new UsageError("The video has no measurable duration.");
   return frames / duration;
+}
+
+/** Enough frames for the motion to read as video whatever the duration, never more than the video has. */
+export function framesFor(duration: number, available: number): number {
+  return Math.min(available, MAX_FRAMES, Math.max(MIN_FRAMES, Math.round(duration * FRAMES_PER_SECOND)));
+}
+
+/** 40vh of scroll per second of video, at least 300vh. */
+export function scrollLengthFor(duration: number): string {
+  return `${Math.max(300, Math.round(duration * 4) * 10)}vh`;
+}
+
+export interface PlannedSet extends FrameSet {
+  quality: number;
+}
+
+/** The phone breakpoint every manifest has used: older runtimes still choose by it. */
+const PHONE_MAX_WIDTH = 767;
+const PHONE_QUALITY = 82;
+const FULL_QUALITY = 84;
+/** Without a crop, a phone needs no more than this. */
+const PHONE_FULL_WIDTH = 1080;
+/** A crop is worth it only if the video is clearly wider than the screen shape it is for. */
+const CROP_TOLERANCE = 1.05;
+/** Full frames for most screens, and for large or dense ones. */
+const DESKTOP_WIDTH = 1920;
+const LARGE_WIDTH = 2560;
+/** The large set must add at least this much over the desktop one to be worth its bytes. */
+const LARGE_GAIN = 1.1;
+
+const CROPS = [
+  // 3:5 fills a phone also with the browser bars showing, 4:5 a tablet.
+  { name: "mobile", maxViewportWidth: PHONE_MAX_WIDTH, aspect: 0.6, width: 1296, quality: PHONE_QUALITY },
+  { name: "tablet", maxViewportWidth: 1023, aspect: 0.8, width: 1440, quality: FULL_QUALITY },
+] as const;
+
+/**
+ * The sets for a video of `width` x `height`: portrait crops only where the video is wider than
+ * the screen (object-fit would hide those sides anyway), and full frames up to 2560. Never upscaled.
+ */
+export function planAdaptiveSets(width: number, height: number): PlannedSet[] {
+  const sets: PlannedSet[] = [];
+  const full = (name: string, maxViewportWidth: number | null, target: number, quality: number) => {
+    const w = Math.min(target, width);
+    sets.push({ name, dir: name, maxViewportWidth, width: w, height: Math.round((w * height) / width), quality });
+  };
+  for (const crop of CROPS) {
+    if (width / height <= crop.aspect * CROP_TOLERANCE) continue;
+    const w = Math.min(crop.width, Math.round(height * crop.aspect));
+    sets.push({
+      name: crop.name,
+      dir: crop.name,
+      maxViewportWidth: crop.maxViewportWidth,
+      maxAspectRatio: crop.aspect,
+      width: w,
+      height: Math.min(height, Math.round(w / crop.aspect)),
+      quality: crop.quality,
+    });
+  }
+  if (sets.length === 0 && width > PHONE_FULL_WIDTH) full("mobile", PHONE_MAX_WIDTH, PHONE_FULL_WIDTH, PHONE_QUALITY);
+  const hasLarge = Math.min(LARGE_WIDTH, width) > DESKTOP_WIDTH * LARGE_GAIN;
+  full("desktop", hasLarge ? DESKTOP_WIDTH : null, DESKTOP_WIDTH, FULL_QUALITY);
+  if (hasLarge) full("large", null, LARGE_WIDTH, FULL_QUALITY);
+  return sets;
 }
 
 export function planSets(widths: [number, number, number]): Omit<FrameSet, "height">[] {

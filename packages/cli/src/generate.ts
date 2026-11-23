@@ -1,12 +1,25 @@
-import { spawn } from "node:child_process";
-import { existsSync } from "node:fs";
+import { spawn, type ChildProcess } from "node:child_process";
+import { existsSync, rmSync } from "node:fs";
 import { copyFile, mkdir, mkdtemp, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
-import { tmpdir } from "node:os";
+import { availableParallelism } from "node:os";
 import { join } from "node:path";
 import type { FrameSet, SequenceManifest } from "@scrollframe/core";
 import sharp from "sharp";
-import { availableFrames, buildManifest, parseDuration, parseFrameRate, planSets, samplingFps, UsageError, type GenerateOptions } from "./options.js";
+import {
+  UsageError,
+  availableFrames,
+  buildManifest,
+  framesFor,
+  parseDuration,
+  parseFrameRate,
+  planAdaptiveSets,
+  planSets,
+  samplingFps,
+  scrollLengthFor,
+  type GenerateOptions,
+  type PlannedSet,
+} from "./options.js";
 
 export interface GenerateResult {
   manifest: SequenceManifest;
@@ -62,13 +75,16 @@ export function ffmpegNotFoundMessage(ffmpeg: string, bundledBinaryBlocked: bool
     "ffmpeg not found. The ffmpeg bundled with scrollframe (ffmpeg-static) was not downloaded, usually because",
     "its install script was blocked (npm 12+ blocks dependency install scripts by default). Fix it with one of:",
     "",
-    "  npx --allow-scripts=ffmpeg-static @scrollframe/cli <video>",
+    // A second package gives npx another cache entry: the blocked run left one without the binary.
+    '  npx --allow-scripts=ffmpeg-static -p "@scrollframe/cli" -p ffmpeg-static scrollframe <video>',
     "  npm install-scripts approve ffmpeg-static && npm rebuild ffmpeg-static   (installed in a project)",
     "  install ffmpeg on your system, or pass --ffmpeg <path>",
   ].join("\n");
 }
 
 const OWNED_ENTRIES = ["manifest.json", "mobile", "tablet", "desktop"];
+/** Newer than the others: a folder of that name is the user's unless a sequence is there. */
+const OWNED_WITH_MANIFEST = ["large"];
 
 /** Validates the output folder and returns the scrollframe-owned entries it already contains. */
 async function checkOutput(out: string, force: boolean): Promise<string[]> {
@@ -76,7 +92,8 @@ async function checkOutput(out: string, force: boolean): Promise<string[]> {
     throw new UsageError(`Output path is not a folder: ${out}`);
   }
   const entries = existsSync(out) ? await readdir(out) : [];
-  const owned = entries.filter((entry) => OWNED_ENTRIES.includes(entry));
+  const sequence = entries.includes("manifest.json");
+  const owned = entries.filter((entry) => OWNED_ENTRIES.includes(entry) || (sequence && OWNED_WITH_MANIFEST.includes(entry)));
   if (owned.length > 0 && !force) {
     throw new UsageError(`${out} already contains a sequence. Use --force to overwrite it.`);
   }
@@ -140,6 +157,72 @@ export async function swapIntoPlace(
   await rm(backup, { recursive: true, force: true });
 }
 
+interface RawFrame {
+  data: Buffer;
+  width: number;
+  height: number;
+}
+
+/**
+ * What adaptive sets are cut from: a 16:9 frame this wide keeps the 2160 px of height that the
+ * 1296 px 3:5 phone crop needs, and covers the 2560 px set.
+ */
+const ADAPTIVE_SOURCE_WIDTH = 3840;
+
+const INTERRUPTS = ["SIGINT", "SIGTERM", "SIGHUP"] as const;
+
+/** A `finally` does not run on a signal: this removes what was half-done, then lets the signal act. */
+function cleanUpOnInterrupt(staging: string, child: () => ChildProcess | null): () => void {
+  const stop = () => {
+    for (const signal of INTERRUPTS) process.off(signal, interrupt);
+  };
+  const interrupt = (signal: NodeJS.Signals) => {
+    stop();
+    child()?.kill();
+    try {
+      rmSync(staging, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+    } finally {
+      process.kill(process.pid, signal);
+    }
+  };
+  for (const signal of INTERRUPTS) process.on(signal, interrupt);
+  return stop;
+}
+
+/** Splits ffmpeg's stream of PPM images: each is `P6 <width> <height> 255` and then its RGB bytes. */
+async function* readPpm(stream: AsyncIterable<Buffer>): AsyncGenerator<RawFrame> {
+  let header = Buffer.alloc(0);
+  let frame: RawFrame | null = null;
+  let filled = 0;
+  for await (let chunk of stream) {
+    while (chunk.length > 0) {
+      if (!frame) {
+        const before = header.length;
+        header = Buffer.concat([header, chunk.subarray(0, 64)]);
+        const match = /^P6\s+(\d+)\s+(\d+)\s+255\s/.exec(header.toString("latin1"));
+        if (!match) {
+          if (header.length >= 64) throw new Error("ffmpeg returned an unexpected image format.");
+          chunk = chunk.subarray(header.length - before);
+          continue;
+        }
+        const [width, height] = [Number(match[1]), Number(match[2])];
+        frame = { width, height, data: Buffer.allocUnsafe(width * height * 3) };
+        filled = 0;
+        chunk = chunk.subarray(match[0].length - before);
+        header = Buffer.alloc(0);
+      }
+      const take = Math.min(chunk.length, frame.data.length - filled);
+      chunk.copy(frame.data, filled, 0, take);
+      filled += take;
+      chunk = chunk.subarray(take);
+      if (filled === frame.data.length) {
+        yield frame;
+        frame = null;
+      }
+    }
+  }
+}
+
 export async function generateSequence(options: GenerateOptions, log: Log = () => {}): Promise<GenerateResult> {
   if (!existsSync(options.input)) throw new UsageError(`Video not found: ${options.input}`);
   const ffmpeg = resolveFfmpeg(options.ffmpeg);
@@ -158,71 +241,127 @@ export async function generateSequence(options: GenerateOptions, log: Log = () =
   // Asking for more frames than the source has only duplicates frames (more bytes, no smoother motion).
   const rate = parseFrameRate(probe.stderr);
   const available = availableFrames(duration, rate);
-  const frames = Math.min(options.frames, available);
+  const autoFrames = options.auto?.frames === true;
+  const frames = autoFrames ? framesFor(duration, available) : Math.min(options.frames, available);
   if (frames < 2) throw new UsageError("The video produced fewer than 2 frames.");
-  if (frames < options.frames) {
+  if (!autoFrames && frames < options.frames) {
     log(`The video only has ${frames} frames; extracting ${frames} instead of ${options.frames}.`);
   }
 
   const previous = await checkOutput(options.out, options.force);
   await mkdir(options.out, { recursive: true });
-  const tmp = await mkdtemp(join(tmpdir(), "scrollframe-"));
   // Everything is written here first, so a failure never leaves a half-replaced sequence.
   const staging = await mkdtemp(join(options.out, ".scrollframe-new-"));
+  let extracting: ChildProcess | null = null;
+  const stopCleanUp = cleanUpOnInterrupt(staging, () => extracting);
 
   try {
-    const plan = planSets(options.widths);
-    const largest = plan[plan.length - 1]!.width;
+    const adaptive = options.auto?.sets === true;
     const fps = samplingFps(frames, duration);
+    const largest = adaptive ? ADAPTIVE_SOURCE_WIDTH : options.widths[2];
     log(`Extracting ${frames} frames from ${duration.toFixed(2)}s of video...`);
-    const extract = await run(ffmpeg, [
-      "-hide_banner",
-      "-loglevel", "error",
-      "-i", options.input,
-      "-vf", `fps=${fps},scale='min(${largest},iw)':-2:flags=lanczos`,
-      "-frames:v", String(frames),
-      join(tmp, "%06d.png"),
-    ]);
-    if (extract.code !== 0) throw new Error(`ffmpeg failed:\n${extract.stderr}`);
+    // Streamed, not saved first: two minutes of 4K as PNG files would be gigabytes of temp files.
+    const child = spawn(
+      ffmpeg,
+      [
+        "-hide_banner",
+        "-loglevel", "error",
+        "-i", options.input,
+        "-vf", `fps=${fps},scale='min(${largest},iw)':-2:flags=lanczos`,
+        "-frames:v", String(frames),
+        "-f", "image2pipe",
+        "-c:v", "ppm",
+        "-pix_fmt", "rgb24",
+        "pipe:1",
+      ],
+      { stdio: ["ignore", "pipe", "pipe"] },
+    );
+    extracting = child;
+    let stderr = "";
+    child.stderr.on("data", (chunk: Buffer) => (stderr += chunk.toString()));
+    const exited = new Promise<number>((resolve) => {
+      child.on("error", (error) => {
+        stderr += error.message;
+        resolve(1);
+      });
+      child.on("close", (code) => resolve(code ?? 1));
+    });
 
-    const sources = (await readdir(tmp)).filter((f) => f.endsWith(".png")).sort();
-    if (sources.length < 2) throw new UsageError("The video produced fewer than 2 frames.");
-
-    const manifestBase = buildManifest(options, sources.length, []);
-    const sets: FrameSet[] = [];
+    const base = buildManifest(options, frames, []);
+    let sets: PlannedSet[] = [];
     const bytesBySet: Record<string, number> = {};
-    const webp = options.lossless
-      ? { lossless: true, effort: 6 }
-      : { quality: options.quality, effort: 6, smartSubsample: true };
-
-    for (const set of plan) {
-      const dir = join(staging, set.dir);
-      await mkdir(dir, { recursive: true });
-      let size = { width: set.width, height: 0 };
-      let bytes = 0;
-      for (const [index, source] of sources.entries()) {
-        const file = manifestBase.pattern.replace("{index}", String(index).padStart(manifestBase.padding, "0"));
-        const info = await sharp(join(tmp, source))
-          .resize({ width: set.width, withoutEnlargement: true })
-          .webp(webp)
-          .toFile(join(dir, file));
-        if (index === 0) {
-          size = { width: info.width, height: info.height };
-          await copyFile(join(dir, file), join(dir, manifestBase.poster));
+    const encode = async ({ data, width, height }: RawFrame, index: number): Promise<void> => {
+      const file = base.pattern.replace("{index}", String(index).padStart(base.padding, "0"));
+      // One set after another: the frames themselves are what runs in parallel.
+      for (const set of sets) {
+        let image = sharp(data, { raw: { width, height, channels: 3 } });
+        if (set.maxAspectRatio !== undefined) {
+          const kept = Math.min(width, Math.round((height * set.width) / set.height));
+          image = image.extract({ left: Math.floor((width - kept) / 2), top: 0, width: kept, height });
         }
-        bytes += info.size;
+        const target = join(staging, set.dir, file);
+        const info = await image
+          .resize({ width: set.width, height: set.height, fit: "fill" })
+          .webp(
+            options.lossless
+              ? { lossless: true, effort: 6 }
+              : { quality: set.quality, effort: adaptive ? 4 : 6, smartSubsample: true },
+          )
+          .toFile(target);
+        if (index === 0) await copyFile(target, join(staging, set.dir, base.poster));
+        bytesBySet[set.name] = (bytesBySet[set.name] ?? 0) + info.size;
       }
-      sets.push({ ...set, ...size });
-      bytesBySet[set.name] = bytes;
-      log(`  ${set.name.padEnd(8)} ${size.width}x${size.height}  ${(bytes / 1024 / 1024).toFixed(1)} MB`);
-    }
+    };
 
-    const manifest = buildManifest(options, sources.length, sets);
+    const parallel = Math.max(2, Math.min(6, availableParallelism() - 1));
+    const working = new Set<Promise<void>>();
+    let failure: unknown;
+    let count = 0;
+    try {
+      for await (const frame of readPpm(child.stdout)) {
+        if (count === 0) {
+          const planned = adaptive
+            ? planAdaptiveSets(frame.width, frame.height)
+            : planSets(options.widths).map((set): PlannedSet => {
+                const width = Math.min(set.width, frame.width);
+                return { ...set, width, height: Math.round((width * frame.height) / frame.width), quality: options.quality };
+              });
+          sets = options.auto?.quality ? planned : planned.map((set) => ({ ...set, quality: options.quality }));
+          for (const set of sets) await mkdir(join(staging, set.dir), { recursive: true });
+        }
+        const work = encode(frame, count++)
+          .catch((error: unknown) => {
+            failure ??= error;
+          })
+          .finally(() => working.delete(work));
+        working.add(work);
+        if (working.size >= parallel) await Promise.race(working);
+        if (failure) break;
+        if (frames > 300 && count < frames && count % Math.ceil(frames / 4) === 0) log(`  ${count} of ${frames} frames...`);
+      }
+    } finally {
+      await Promise.all(working); // nothing may still write into staging when it is removed
+      if (failure) child.kill();
+    }
+    if (failure) throw failure;
+    if ((await exited) !== 0) throw new Error(`ffmpeg failed:\n${stderr}`);
+    if (count < 2) throw new UsageError("The video produced fewer than 2 frames.");
+
+    for (const set of sets) {
+      log(`  ${set.name.padEnd(8)} ${set.width}x${set.height}  ${((bytesBySet[set.name] ?? 0) / 1024 / 1024).toFixed(1)} MB`);
+    }
+    const manifest: SequenceManifest = {
+      ...buildManifest(options, count, sets.map(({ quality: _quality, ...set }): FrameSet => set)),
+      padding: base.padding, // the one the files were named with
+      // Every CLI run: the duration is known whatever decided the frames and sizes. API callers without `auto` keep 0.4.0's manifest.
+      ...(options.auto ? { scrollLength: scrollLengthFor(duration) } : {}),
+    };
     await writeFile(join(staging, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`);
+    stopCleanUp(); // the swap restores on its own, and needs staging until it ends
     await swapIntoPlace(options.out, staging, previous);
     return { manifest, manifestPath: join(options.out, "manifest.json"), bytesBySet };
   } finally {
-    await rm(tmp, { recursive: true, force: true });
+    stopCleanUp();
     await rm(staging, { recursive: true, force: true });
   }
 }

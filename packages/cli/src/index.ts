@@ -17,8 +17,11 @@ export {
   parseCommandLine,
   parseDuration,
   parseFrameRate,
+  framesFor,
+  planAdaptiveSets,
   planSets,
   samplingFps,
+  scrollLengthFor,
   type GenerateOptions,
   type ScaffoldFlags,
 } from "./options.js";

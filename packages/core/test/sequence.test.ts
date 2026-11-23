@@ -15,15 +15,55 @@ const manifest = parseManifest({
   ],
 });
 
-/** Fake <img>: records every requested url and lets each test decide when (and whether) it decodes. */
+/**
+ * Fake <img>: setting src downloads (recorded once per url, like the browser's cache), decode()
+ * waits for the download, and each test decides when and whether it arrives.
+ */
 class FakeImage {
   static requests: string[] = [];
-  static pending = new Map<string, { resolve: () => void; reject: (e: Error) => void; image: FakeImage }>();
+  static pending = new Map<string, { resolve: () => void; reject: (e: Error) => void }>();
+  static arrived = new Set<string>();
+  static waiting = new Map<string, FakeImage[]>();
+  static decoded: string[] = [];
   decoding = "";
-  src = "";
+  onload: (() => void) | null = null;
+  onerror: (() => void) | null = null;
+  private url = "";
+  private settle: ((ok: boolean) => void)[] = [];
+
+  get src() {
+    return this.url;
+  }
+  set src(url: string) {
+    this.url = url;
+    if (FakeImage.arrived.has(url)) {
+      queueMicrotask(() => this.finish(true));
+      return;
+    }
+    const waiting = FakeImage.waiting.get(url);
+    if (waiting) {
+      waiting.push(this);
+      return;
+    }
+    const images: FakeImage[] = [this];
+    FakeImage.waiting.set(url, images);
+    FakeImage.requests.push(url);
+    const end = (ok: boolean) => {
+      FakeImage.waiting.delete(url);
+      FakeImage.pending.delete(url);
+      if (ok) FakeImage.arrived.add(url);
+      for (const image of images) image.finish(ok);
+    };
+    FakeImage.pending.set(url, { resolve: () => end(true), reject: () => end(false) });
+  }
+  private finish(ok: boolean) {
+    (ok ? this.onload : this.onerror)?.();
+    for (const settle of this.settle.splice(0)) settle(ok);
+  }
   decode(): Promise<void> {
-    FakeImage.requests.push(this.src);
-    return new Promise((resolve, reject) => FakeImage.pending.set(this.src, { resolve, reject, image: this }));
+    FakeImage.decoded.push(this.url);
+    if (FakeImage.arrived.has(this.url)) return Promise.resolve();
+    return new Promise((resolve, reject) => this.settle.push((ok) => (ok ? resolve() : reject(new Error("failed")))));
   }
 }
 
@@ -79,7 +119,7 @@ function create(extra: Partial<ScrollSequenceOptions> = {}) {
   const container = document.createElement("section");
   container.getBoundingClientRect = () => ({ top: rect.top, height: rect.height }) as DOMRect;
   const canvas = document.createElement("canvas");
-  const engine = new ScrollSequence({ container, canvas, manifest, ...extra });
+  const engine = new ScrollSequence({ container, canvas, manifest, smoothing: 0, ...extra });
   live.push(engine);
   return { engine, container, canvas };
 }
@@ -87,6 +127,9 @@ function create(extra: Partial<ScrollSequenceOptions> = {}) {
 beforeEach(() => {
   FakeImage.requests = [];
   FakeImage.pending = new Map();
+  FakeImage.arrived = new Set();
+  FakeImage.waiting = new Map();
+  FakeImage.decoded = [];
   FakeObserver.instances = [];
   rafQueue = [];
   rect = { top: 0, height: 3000 };
@@ -308,6 +351,94 @@ describe("ScrollSequence recovery", () => {
     expect(FakeImage.requests).toEqual([]);
   });
 
+  it("keeps the backoff while scrolling a long sequence that keeps failing", async () => {
+    const timers = vi.spyOn(globalThis, "setTimeout");
+    create({ manifest: parseManifest({ ...manifest, frameCount: 1800, padding: 4 }) }).engine.start();
+    FakeObserver.instances[0]!.intersect();
+    for (let step = 1; step <= 30; step++) {
+      rect.top = -60 * step;
+      window.dispatchEvent(new Event("scroll"));
+      flushFrames();
+      await failEverything();
+      await vi.advanceTimersByTimeAsync(100);
+    }
+    const delays = timers.mock.calls.map(([, ms]) => ms ?? 0).filter((ms) => ms >= 1000);
+    timers.mockRestore();
+    // Three seconds of scrolling while offline: only the first retry has come due.
+    expect(delays).toEqual([1000, 2000]);
+  });
+
+  it("a frame that failed to decode is tried again, not left as a hole", async () => {
+    create({ concurrency: 1 }).engine.start();
+    FakeObserver.instances[0]!.intersect();
+    await flush();
+    const decode = FakeImage.prototype.decode;
+    let failures = 0;
+    // Downloaded fine, but its first decode fails (memory pressure, an evicted cache entry).
+    FakeImage.prototype.decode = function (this: FakeImage) {
+      if (this.src.endsWith("f-00.webp") && failures++ === 0) return Promise.reject(new Error("decode"));
+      return decode.call(this);
+    };
+    try {
+      for (let i = 0; i < 400 && FakeImage.pending.size > 0; i++) {
+        for (const entry of [...FakeImage.pending.values()]) entry.resolve();
+        await flush();
+      }
+      flushFrames();
+      await vi.advanceTimersByTimeAsync(1000);
+      for (let i = 0; i < 20; i++) {
+        for (const entry of [...FakeImage.pending.values()]) entry.resolve();
+        await flush();
+        flushFrames();
+      }
+      expect(failures).toBeGreaterThan(1);
+      expect((drawImage.mock.calls.at(-1)![0] as FakeImage).src).toBe("/seq/m/f-00.webp");
+    } finally {
+      FakeImage.prototype.decode = decode;
+    }
+  });
+
+  it("after an outage longer than the retries, what failed is asked again once downloads work", async () => {
+    create({ manifest: parseManifest({ ...manifest, frameCount: 1800, padding: 4 }) }).engine.start();
+    FakeObserver.instances[0]!.intersect();
+    // A 10 s outage: every download fails and the three retries (1, 2 and 4 s) are spent.
+    for (let i = 0; i < 12; i++) {
+      await failEverything();
+      await vi.advanceTimersByTimeAsync(1000);
+    }
+    await failEverything();
+    FakeImage.requests = [];
+    // The server is back: the reader scrolls on, and those new downloads work.
+    rect.top = -400;
+    window.dispatchEvent(new Event("scroll"));
+    flushFrames();
+    for (let i = 0; i < 40; i++) {
+      for (const entry of [...FakeImage.pending.values()]) entry.resolve();
+      await vi.advanceTimersByTimeAsync(200);
+      flushFrames();
+    }
+    // 1799 belongs to the coarse pass and failed during the outage.
+    expect(FakeImage.requests).toContain("/seq/m/f-1799.webp");
+  });
+
+  it("a frame that is never there is not asked for faster than the backoff while scrolling", async () => {
+    create({ manifest: parseManifest({ ...manifest, frameCount: 1800, padding: 4 }) }).engine.start();
+    FakeObserver.instances[0]!.intersect();
+    const missing = "/seq/m/f-0000.webp";
+    // A minute of reading: everything loads except one frame, which always answers 404.
+    for (let second = 0; second < 60; second++) {
+      rect.top = -30 * second;
+      window.dispatchEvent(new Event("scroll"));
+      for (let step = 0; step < 5; step++) {
+        for (const [url, entry] of [...FakeImage.pending.entries()]) (url === missing ? entry.reject : entry.resolve)(new Error("404"));
+        await vi.advanceTimersByTimeAsync(200);
+        flushFrames();
+      }
+    }
+    // The backoff (1, 2, 4 s, then again once downloads work) allows about 26 a minute; one a second would be 60.
+    expect(FakeImage.requests.filter((url) => url === missing).length).toBeLessThan(35);
+  });
+
   it("cancels pending retries on destroy", async () => {
     const engine = await startOffline();
     engine.destroy();
@@ -405,5 +536,246 @@ describe("sticky blockers: one hidden axis", () => {
     expect(warn.mock.calls[0]![0]).toMatch(/^scrollframe: div\.page has "overflow-y: hidden".*Use "overflow-y: clip" instead/);
     warn.mockRestore();
     wrapper.remove();
+  });
+});
+
+describe("fluid scrolling", () => {
+  const long = parseManifest({ ...manifest, frameCount: 1800, padding: 4 });
+  const at = (url: string) => Number(/f-(\d+)/.exec(url)![1]);
+
+  async function downloadAll(limit = 5000) {
+    for (let i = 0; i < limit && FakeImage.pending.size > 0; i++) {
+      for (const entry of [...FakeImage.pending.values()]) entry.resolve();
+      await tick();
+    }
+  }
+  function scrollTo(progress: number) {
+    rect.top = -2000 * progress;
+    window.dispatchEvent(new Event("scroll"));
+  }
+  async function settle(times = 30) {
+    for (let i = 0; i < times; i++) {
+      flushFrames();
+      await tick();
+    }
+  }
+
+  it("eases towards the scroll position instead of jumping to it", async () => {
+    const onProgress = vi.fn();
+    const { engine } = create({ smoothing: 80, onProgress });
+    engine.start();
+    flushFrames();
+    scrollTo(1);
+    flushFrames();
+    const [first] = onProgress.mock.calls.at(-1)!;
+    expect(first).toBeGreaterThan(0);
+    expect(first).toBeLessThan(0.5);
+    await settle(80);
+    expect(onProgress).toHaveBeenLastCalledWith(1, 39);
+  });
+
+  it("starts at the scroll position of a restored page without easing to it", () => {
+    const onProgress = vi.fn();
+    rect.top = -1000;
+    create({ smoothing: 80, onProgress }).engine.start();
+    flushFrames();
+    expect(onProgress).toHaveBeenLastCalledWith(0.5, 20);
+  });
+
+  it("stops asking for animation frames once it has arrived", async () => {
+    create({ smoothing: 80 }).engine.start();
+    flushFrames();
+    scrollTo(0.5);
+    await settle(80);
+    expect(rafQueue).toEqual([]);
+  });
+
+  it("decodes only a window of frames around the scroll position", async () => {
+    create({ manifest: parseManifest({ ...manifest, frameCount: 240, padding: 4 }) }).engine.start();
+    FakeObserver.instances[0]!.intersect();
+    await downloadAll();
+    await settle();
+    expect(new Set(FakeImage.decoded).size).toBeLessThan(40);
+    scrollTo(0.5);
+    await settle();
+    expect(at((drawImage.mock.calls.at(-1)![0] as FakeImage).src)).toBe(120);
+  });
+
+  it("a long sequence downloads a coarse pass and what is near, not every frame", async () => {
+    create({ manifest: long }).engine.start();
+    FakeObserver.instances[0]!.intersect();
+    await downloadAll();
+    await settle();
+    const wanted = FakeImage.requests.map(at);
+    expect(wanted.length).toBeLessThan(400);
+    expect(wanted).toContain(1799); // the end is never blank
+    expect(wanted).toContain(100); // near the start
+    expect(wanted).not.toContain(901); // far, and not in the coarse pass
+  });
+
+  it("a long sequence downloads what the scroll reaches and shows that exact frame", async () => {
+    create({ manifest: long }).engine.start();
+    FakeObserver.instances[0]!.intersect();
+    await downloadAll();
+    scrollTo(901 / 1799);
+    for (let i = 0; i < 4; i++) {
+      await settle();
+      await downloadAll();
+    }
+    await settle();
+    expect(FakeImage.requests.map(at)).toContain(901);
+    expect(at((drawImage.mock.calls.at(-1)![0] as FakeImage).src)).toBe(901);
+  });
+});
+
+describe("full width", () => {
+  it.each([
+    ["the parent", "block"],
+    ["an inline host, as Angular writes", "inline"],
+  ])("spans the page from %s without moving it out of the flow", (_name, display) => {
+    Object.defineProperty(document.documentElement, "clientWidth", { configurable: true, value: 1200 });
+    const parent = document.createElement("div");
+    parent.style.padding = "0 10px";
+    Object.defineProperty(parent, "clientWidth", { value: 1000 });
+    parent.getBoundingClientRect = () => ({ left: 40 }) as DOMRect;
+    const host = document.createElement("app-hero");
+    host.style.display = display;
+    const container = document.createElement("section");
+    // Content box of the parent: from 50 to 1030.
+    container.getBoundingClientRect = () =>
+      ({ top: 0, height: 3000, left: 50 + (parseFloat(container.style.marginLeft) || 0) }) as DOMRect;
+    if (display === "inline") parent.append(host), host.append(container);
+    else parent.append(container);
+    document.body.append(parent);
+    const engine = new ScrollSequence({ container, canvas: document.createElement("canvas"), manifest, fullWidth: true }).start();
+    live.push(engine);
+
+    const { width, left, marginLeft, marginRight } = container.style;
+    // Width and margins add up to the parent's 980, so Firefox sees nothing sticking out.
+    expect([width, left, marginLeft, marginRight]).toEqual(["1200px", "", "-50px", "-170px"]);
+    engine.destroy();
+    expect([container.style.width, container.style.marginLeft]).toEqual(["", ""]);
+    parent.remove();
+    delete (document.documentElement as { clientWidth?: number }).clientWidth;
+  });
+
+  it("follows the page when its width changes without a window resize (a scrollbar appears)", () => {
+    const observers: { callback: () => void; targets: Element[] }[] = [];
+    vi.stubGlobal(
+      "ResizeObserver",
+      class {
+        targets: Element[] = [];
+        constructor(callback: () => void) {
+          observers.push({ callback, targets: this.targets });
+        }
+        observe(target: Element) {
+          this.targets.push(target);
+        }
+        disconnect() {
+          this.targets.length = 0;
+        }
+      },
+    );
+    let pageWidth = 1280;
+    Object.defineProperty(document.documentElement, "clientWidth", { configurable: true, get: () => pageWidth });
+    const container = document.createElement("section");
+    container.getBoundingClientRect = () => ({ top: 0, height: 3000, left: parseFloat(container.style.marginLeft) || 0 }) as DOMRect;
+    document.body.append(container);
+    const engine = new ScrollSequence({ container, canvas: document.createElement("canvas"), manifest, fullWidth: true }).start();
+    expect(container.style.width).toBe("1280px");
+    expect(observers.flatMap((o) => o.targets)).toContain(document.documentElement);
+
+    pageWidth = 1265; // the content grew and a 15 px scrollbar appeared
+    for (const observer of observers) observer.callback();
+    expect(container.style.width).toBe("1265px");
+
+    engine.destroy();
+    expect(observers.flatMap((o) => o.targets)).toEqual([]);
+    container.remove();
+    delete (document.documentElement as { clientWidth?: number }).clientWidth;
+  });
+
+  it("is off unless asked", () => {
+    const { engine, container } = create();
+    engine.start();
+    expect([container.style.width, container.style.marginLeft]).toEqual(["", ""]);
+  });
+});
+
+describe("off-thread decoding in Chromium", () => {
+  const fetched: string[] = [];
+  const bitmaps: { url: string; closed: boolean }[] = [];
+  beforeEach(() => {
+    fetched.length = 0;
+    bitmaps.length = 0;
+    vi.stubGlobal("navigator", { userAgentData: { brands: [{ brand: "Chromium", version: "142" }] } });
+    vi.stubGlobal("fetch", async (url: string) => {
+      fetched.push(url);
+      return { ok: true, blob: async () => ({ url }) };
+    });
+    vi.stubGlobal("createImageBitmap", async (blob: { url: string }) => {
+      const bitmap = { url: blob.url, closed: false, close() { this.closed = true; } };
+      bitmaps.push(bitmap);
+      return bitmap;
+    });
+  });
+
+  it("fetches same-origin frames and paints ImageBitmaps, without <img>", async () => {
+    create().engine.start();
+    FakeObserver.instances[0]!.intersect();
+    for (let i = 0; i < 20; i++) await tick();
+    flushFrames();
+    expect(FakeImage.requests).toEqual([]);
+    expect(fetched[0]).toBe("/seq/m/f-00.webp");
+    expect((drawImage.mock.calls.at(-1)![0] as { url: string }).url).toBe("/seq/m/f-00.webp");
+  });
+
+  it("frees the bitmaps it lets go of", async () => {
+    const { engine } = create({ manifest: parseManifest({ ...manifest, frameCount: 240, padding: 4 }) });
+    engine.start();
+    FakeObserver.instances[0]!.intersect();
+    for (let i = 0; i < 200; i++) await tick();
+    for (let k = 1; k <= 10; k++) {
+      rect.top = -200 * k;
+      window.dispatchEvent(new Event("scroll"));
+      for (let i = 0; i < 6; i++) {
+        flushFrames();
+        await tick();
+      }
+    }
+    const open = bitmaps.filter((bitmap) => !bitmap.closed).length;
+    expect(bitmaps.length).toBeGreaterThan(30);
+    expect(open).toBeLessThanOrEqual(24);
+    engine.destroy();
+    expect(bitmaps.every((bitmap) => bitmap.closed)).toBe(true);
+  });
+
+  it("uses <img> for frames on another origin, which need no CORS that way", async () => {
+    create({ baseUrl: "https://cdn.example.com/seq" }).engine.start();
+    FakeObserver.instances[0]!.intersect();
+    await tick();
+    expect(fetched).toEqual([]);
+    expect(FakeImage.requests[0]).toBe("https://cdn.example.com/seq/m/f-00.webp");
+  });
+
+  it("retries a frame whose download failed", async () => {
+    let fail = true;
+    vi.stubGlobal("fetch", async (url: string) => {
+      fetched.push(url);
+      if (fail && url.endsWith("f-00.webp")) throw new TypeError("network");
+      return { ok: true, blob: async () => ({ url }) };
+    });
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      create().engine.start();
+      FakeObserver.instances[0]!.intersect();
+      for (let i = 0; i < 100; i++) await vi.advanceTimersByTimeAsync(0);
+      fail = false;
+      await vi.advanceTimersByTimeAsync(1000);
+      for (let i = 0; i < 20; i++) await vi.advanceTimersByTimeAsync(0);
+      expect(fetched.filter((url) => url.endsWith("f-00.webp"))).toHaveLength(2);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

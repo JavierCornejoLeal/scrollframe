@@ -8,8 +8,10 @@ export interface ScrollSequenceProps {
   manifest: SequenceManifest | unknown;
   /** Describes the scene. It is the alt text of the poster, the only image search engines index. */
   alt: string;
-  /** Total scroll distance of the section. Longer = slower playback. Default "300vh". */
+  /** Total scroll distance of the section. Longer = slower playback. Default: the manifest's, or "300vh". */
   scrollLength?: string;
+  /** Span the whole page, whatever the width of the element it is in. Default true. */
+  fullWidth?: boolean;
   /** Overrides `manifest.baseUrl` (e.g. a CDN). */
   baseUrl?: string;
   /** Above-the-fold hero: poster loads eagerly with high priority (good LCP). Default true. */
@@ -30,10 +32,21 @@ const fill: CSSProperties = {
   objectFit: "cover",
 };
 
+/** Right before any script; the engine then takes out the scrollbar and any off-centre parent. */
+const spanPage: CSSProperties = {
+  width: "100vw",
+  maxWidth: "none",
+  flexShrink: 0,
+  boxSizing: "border-box",
+  marginLeft: "calc(50% - 50vw)",
+  marginRight: "calc(50% - 50vw)",
+};
+
 export function ScrollSequence({
   manifest: rawManifest,
   alt,
-  scrollLength = "300vh",
+  scrollLength,
+  fullWidth = true,
   baseUrl,
   priority = true,
   children,
@@ -57,15 +70,21 @@ export function ScrollSequence({
       canvas,
       manifest,
       baseUrl,
+      fullWidth,
       onProgress: (progress, index) => onProgressRef.current?.(progress, index),
     }).start();
     return () => engine.destroy();
-  }, [manifest, baseUrl]);
+  }, [manifest, baseUrl, fullWidth]);
 
   const poster = useMemo(() => posterImage(manifest, baseUrl), [manifest, baseUrl]);
 
   return (
-    <section ref={containerRef} className={className} style={{ position: "relative", height: scrollLength, ...style }}>
+    <section ref={containerRef} className={className} style={{
+        position: "relative",
+        height: scrollLength ?? manifest.scrollLength ?? "300vh",
+        ...(fullWidth ? spanPage : {}),
+        ...style,
+      }}>
       <div style={{ position: "sticky", top: 0, height: "100svh", overflow: "hidden" }}>
         <picture>
           {poster.sources.map((source) => (

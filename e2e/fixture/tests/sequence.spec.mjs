@@ -73,6 +73,27 @@ for (const { set, width } of [
   });
 }
 
+for (const [parent, css] of [
+  ["a centred column, as the Vite starter has", "width:700px;margin:0 auto;display:flex;flex-direction:column;border-inline:1px solid"],
+  ["an off-centre column", "width:600px;margin-left:120px;padding:0 24px"],
+  ["a column that centres its children", "width:700px;margin:0 auto;display:flex;flex-direction:column;align-items:center"],
+]) {
+  test(`spans the page inside ${parent}, with no sideways scroll`, async ({ page }) => {
+    await page.route("**/", async (route) => {
+      const response = await route.fetch();
+      await route.fulfill({ response, body: (await response.text()).replace("</head>", `<style>main{${css}}</style></head>`) });
+    });
+    await page.goto("/");
+    const box = () =>
+      page.evaluate(() => {
+        const root = document.documentElement;
+        const { left, width } = document.querySelector("section").getBoundingClientRect();
+        return { left: Math.round(left), gap: Math.round(width - root.clientWidth), sideways: root.scrollWidth - root.clientWidth };
+      });
+    await expect.poll(box).toEqual({ left: 0, gap: 0, sideways: 0 });
+  });
+}
+
 test("a sequence below the fold downloads nothing until the reader gets close", async ({ page }) => {
   const frames = trackFrames(page);
   await page.goto("/?below");

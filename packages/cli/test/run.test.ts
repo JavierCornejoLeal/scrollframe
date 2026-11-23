@@ -90,7 +90,7 @@ describe("ffmpegNotFoundMessage", () => {
         "ffmpeg not found. The ffmpeg bundled with scrollframe (ffmpeg-static) was not downloaded, usually because",
         "its install script was blocked (npm 12+ blocks dependency install scripts by default). Fix it with one of:",
         "",
-        "  npx --allow-scripts=ffmpeg-static @scrollframe/cli <video>",
+        '  npx --allow-scripts=ffmpeg-static -p "@scrollframe/cli" -p ffmpeg-static scrollframe <video>',
         "  npm install-scripts approve ffmpeg-static && npm rebuild ffmpeg-static   (installed in a project)",
         "  install ffmpeg on your system, or pass --ffmpeg <path>",
       ].join("\n"),
@@ -144,7 +144,7 @@ describe.skipIf(!hasFfmpeg)("runCli (end to end)", () => {
     spawnSync(ffmpeg, ["-y", "-loglevel", "error", "-f", "lavfi", "-i", "testsrc=size=640x360:rate=30:duration=1", video]);
     const outDir = join(scratch, "public", "seq");
     const { out, io: cli } = io();
-    expect(await runCli([video, "-o", outDir, "-f", "6", "--lossless"], cli)).toBe(0);
+    expect(await runCli([video, "-o", outDir, "-f", "6", "-w", "720,1280,1920", "--lossless"], cli)).toBe(0);
     expect(out.stderr).toBe("Warning: --lossless frames are several times heavier and will hurt LCP.\n");
     expect(out.stdout).toContain("Extracting 6 frames from 1.00s of video...");
     expect(out.stdout).toMatch(/mobile\s+640x360/);
@@ -152,7 +152,7 @@ describe.skipIf(!hasFfmpeg)("runCli (end to end)", () => {
     expect(out.stdout).toContain("<ScrollSequence manifest={manifest}");
 
     // A forced regeneration replaces the sequence and leaves no staging folders behind.
-    expect(await runCli([video, "-o", outDir, "-f", "4", "--force"], io().io)).toBe(0);
+    expect(await runCli([video, "-o", outDir, "-f", "4", "-w", "720,1280,1920", "--force"], io().io)).toBe(0);
     expect(readdirSync(outDir).sort()).toEqual(["desktop", "manifest.json", "mobile", "tablet"]);
     expect(readdirSync(join(outDir, "mobile"))).toHaveLength(5);
   }, 60_000);

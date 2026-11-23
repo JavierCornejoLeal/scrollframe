@@ -97,3 +97,53 @@ describe("nearestLoaded", () => {
     expect(nearestLoaded(5, 40, () => false)).toBe(-1);
   });
 });
+
+const adaptive = {
+  ...raw,
+  scrollLength: "630vh",
+  sets: [
+    { name: "mobile", maxViewportWidth: 767, maxAspectRatio: 0.6, width: 1296, height: 2160, dir: "mobile" },
+    { name: "tablet", maxViewportWidth: 1023, maxAspectRatio: 0.8, width: 1440, height: 1800, dir: "tablet" },
+    { name: "desktop", maxViewportWidth: 1920, width: 1920, height: 1080, dir: "desktop" },
+    { name: "large", maxViewportWidth: null, width: 2560, height: 1440, dir: "large" },
+  ],
+};
+
+describe("adaptive manifests", () => {
+  it("keeps the optional fields, and adds none to an older manifest", () => {
+    expect(parseManifest(adaptive).scrollLength).toBe("630vh");
+    expect(parseManifest(adaptive).sets[0]!.maxAspectRatio).toBe(0.6);
+    expect(parseManifest(raw)).not.toHaveProperty("scrollLength");
+    expect(parseManifest(raw).sets[0]).not.toHaveProperty("maxAspectRatio");
+  });
+
+  it.each([0, -1, "wide"])("refuses maxAspectRatio %j", (maxAspectRatio) => {
+    expect(() => parseManifest({ ...adaptive, sets: [{ ...adaptive.sets[0], maxAspectRatio }] })).toThrow(
+      "sets[0].maxAspectRatio must be a positive number.",
+    );
+  });
+
+  it.each(["630", '1vh" onload="x', "calc(1px)", 5])("refuses scrollLength %j, which ends up in markup", (scrollLength) => {
+    expect(() => parseManifest({ ...adaptive, scrollLength })).toThrow(ManifestError);
+  });
+
+  it.each([
+    ["phone", 390, 844, 3, "mobile"],
+    ["phone with browser bars", 390, 664, 3, "mobile"],
+    ["tablet portrait", 820, 1180, 2, "tablet"],
+    ["tablet portrait with browser bars", 820, 1106, 2, "tablet"],
+    ["phone landscape", 844, 390, 3, "desktop"],
+    ["1080p screen", 1920, 1080, 1, "desktop"],
+    ["1080p browser window", 1906, 970, 1, "desktop"],
+    ["QHD screen", 2560, 1440, 1, "large"],
+    ["retina laptop", 1512, 982, 2, "large"],
+    ["tablet landscape", 1180, 820, 2, "large"],
+    ["tall desktop window", 1000, 1100, 1, "desktop"],
+  ])("%s %ix%i@%i uses %s", (_name, width, height, dpr, name) => {
+    expect(selectFrameSet(parseManifest(adaptive), width, height, dpr).name).toBe(name);
+  });
+
+  it("ignores height and pixel ratio for an older manifest", () => {
+    expect(selectFrameSet(parseManifest(raw), 375, 812, 3).name).toBe("mobile");
+  });
+});

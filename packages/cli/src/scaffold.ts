@@ -2,9 +2,11 @@ import { existsSync } from "node:fs";
 import { createRequire } from "node:module";
 import { basename, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import type { Framework, PackageManager, ProjectInfo } from "./detect.js";
-import { deriveBaseUrl, type GenerateOptions, type ScaffoldFlags } from "./options.js";
+import { readText } from "./files.js";
+import { FRAMES_PER_SECOND, MIN_FRAMES, deriveBaseUrl, type GenerateOptions, type ScaffoldFlags } from "./options.js";
 // Inlined at build time, after versioning: the CLI and the element are not always released together.
 import { version as ELEMENT_VERSION } from "../../element/package.json";
+import { version as REACT_VERSION } from "../../react/package.json";
 import { STYLESHEET, planAngularStyles } from "./angular.js";
 import { planOverflowFixes, type FileEdit } from "./stylefix.js";
 import { componentFor, type ComponentFile } from "./templates.js";
@@ -36,6 +38,44 @@ export function runtimePackage(framework: Framework): string | null {
   return null;
 }
 
+/** The runtime release these frames are made for, inlined at build time like the CDN version. */
+const RUNTIME_VERSIONS: Record<string, string> = { "@scrollframe/react": REACT_VERSION, "@scrollframe/element": ELEMENT_VERSION };
+
+const versionOf = (text: string | undefined) => {
+  const match = /(\d+)\.(\d+)\.(\d+)/.exec(text ?? "");
+  return match ? match.slice(1, 4).map(Number) : null;
+};
+
+/** The caret range of the current release, e.g. `^0.5.0`. */
+const caretOf = (version: string) => `^${version.split(".").slice(0, 2).join(".")}.0`;
+
+/**
+ * The version of `pkg` the project has, when it is too old for these frames: before 1.0 a minor
+ * release is a breaking one, as in a caret range. null when it is recent enough or unknown.
+ */
+function outdated(project: ProjectInfo, pkg: string): string | null {
+  const required = versionOf(RUNTIME_VERSIONS[pkg]);
+  let manifest: { version?: string; dependencies?: Record<string, string>; devDependencies?: Record<string, string> } = {};
+  try {
+    manifest = JSON.parse(readText(join(project.root, "node_modules", pkg, "package.json")) ?? "{}");
+  } catch {
+    // unreadable: fall back to what package.json declares
+  }
+  let found = manifest.version;
+  if (!found) {
+    try {
+      const declared = JSON.parse(readText(join(project.root, "package.json")) ?? "{}") as typeof manifest;
+      found = declared.dependencies?.[pkg] ?? declared.devDependencies?.[pkg];
+    } catch {
+      return null;
+    }
+  }
+  const have = versionOf(found);
+  if (!required || !have || !found) return null;
+  const older = required[0]! > 0 ? have[0]! < required[0]! : have[0] === 0 && have[1]! < required[1]!;
+  return older ? found.replace(/^[^\d]*/, "") : null;
+}
+
 export function installCommand(manager: PackageManager | null, pkg: string): { command: string; args: string[] } {
   if (manager === null || manager === "npm") return { command: "npm", args: ["install", pkg] };
   return { command: manager, args: ["add", pkg] };
@@ -49,6 +89,15 @@ export function componentName(video: string): string {
   return `${/^\d/.test(pascal) ? "Video" : ""}${pascal}Sequence`;
 }
 
+export interface PlannedInstall {
+  pkg: string;
+  command: string;
+  args: string[];
+  /** For an update: the installed version it replaces, and the range it installs. */
+  from?: string;
+  range?: string;
+}
+
 export interface ScaffoldPlan {
   /** null when the project could not be read: only the frames are generated. */
   project: ProjectInfo | null;
@@ -59,7 +108,7 @@ export interface ScaffoldPlan {
   url?: string | null;
   /** What to check before confirming. Enter is a yes only when this is empty. */
   doubts?: string[];
-  install: { pkg: string; command: string; args: string[] } | null;
+  install: PlannedInstall | null;
   component: ComponentFile | null;
   /** The component's path, when the user already has that file: it is left as it is. */
   existing?: string | null;
@@ -136,10 +185,15 @@ export function planScaffold(project: ProjectInfo, generate: GenerateOptions, fl
   }
 
   const pkg = runtimePackage(framework);
-  const install =
-    pkg !== null && flags.install && !project.dependencies.includes(pkg)
-      ? { pkg, ...installCommand(project.packageManager, pkg) }
-      : null;
+  let install: PlannedInstall | null = null;
+  if (pkg !== null && !project.dependencies.includes(pkg)) {
+    if (flags.install) install = { pkg, ...installCommand(project.packageManager, pkg) };
+  } else if (pkg !== null) {
+    const from = outdated(project, pkg);
+    const range = caretOf(RUNTIME_VERSIONS[pkg]!);
+    if (from && flags.install) install = { pkg, from, range, ...installCommand(project.packageManager, `${pkg}@${range}`) };
+    else if (from) notes.push(`${pkg} ${from} is older than these frames need: update it to ${range}.`);
+  }
 
   let component = componentFor(framework, {
     project,
@@ -207,8 +261,16 @@ export function formatPlan(plan: ScaffoldPlan): string {
   if (framework || (plan.url && !project?.framework)) lines.push(`  Frames in:  ${folder}`, `  Served at:  ${plan.url ?? "unknown"}`);
   if (project) lines.push("");
 
-  const steps = [`Generate ${plan.generate.frames} frames in ${folder}`];
-  if (plan.install) steps.push(`Install ${plan.install.pkg}  (${[plan.install.command, ...plan.install.args].join(" ")})`);
+  const { auto, frames } = plan.generate;
+  const amount = auto?.frames
+    ? `${FRAMES_PER_SECOND} frames per second of video (at least ${MIN_FRAMES})`
+    : `${frames} frames`;
+  const steps = [`Generate ${amount} in ${folder}`];
+  if (plan.install) {
+    const { pkg, from, range, command, args } = plan.install;
+    const what = from ? `Update ${pkg} ${from} -> ${range}` : `Install ${pkg}`;
+    steps.push(`${what}  (${[command, ...args].join(" ")})`);
+  }
   if (plan.component) steps.push(`Create ${plan.component.path}`);
   for (const edit of plan.edits) steps.push(edit.description);
   lines.push("Plan:", ...steps.map((step, i) => ` ${i + 1}. ${step}`));

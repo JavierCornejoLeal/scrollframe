@@ -1,7 +1,7 @@
 // End-to-end tests of the installed `scrollframe` CLI against a real video.
 // Run inside the consumer project created by e2e/scripts/prepare.mjs.
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -132,4 +132,24 @@ test("asking for more frames than the video has extracts only the real ones", ()
   assert.match(stdout, new RegExp(`only has ${SOURCE_FRAMES} frames`));
   const manifest = parseManifest(JSON.parse(readFileSync(join(out, "manifest.json"), "utf8")));
   assert.equal(manifest.frameCount, SOURCE_FRAMES);
+});
+
+// A long video takes minutes, so it gets interrupted: nothing half-done may stay in public/ and be deployed.
+test("Ctrl+C while generating leaves nothing in the output folder", { skip: process.platform === "win32", timeout: 60_000 }, async () => {
+  const root = mkdtempSync(join(import.meta.dirname, ".interrupted-"));
+  try {
+    const out = join(root, "seq");
+    const bin = join(import.meta.dirname, "node_modules/@scrollframe/cli/dist/cli.js");
+    const child = spawn(process.execPath, [bin, VIDEO, "--out", out, "--frames", "60"], { stdio: "ignore" });
+    const left = () => (existsSync(out) ? readdirSync(out) : []);
+    const exited = new Promise((resolve) => child.once("exit", resolve));
+    while (left().length === 0) await new Promise((resolve) => setTimeout(resolve, 20));
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    child.kill("SIGINT");
+    await exited;
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    assert.deepEqual(left(), []);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });

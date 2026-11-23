@@ -900,3 +900,66 @@ describe("the pre-release audit", () => {
     expect(second.stdout).toContain("Created");
   });
 });
+
+describe("older runtime packages", () => {
+  const REACT = JSON.parse(readFileSync(new URL("../../react/package.json", import.meta.url), "utf8")) as { version: string };
+  const ELEMENT = JSON.parse(readFileSync(new URL("../../element/package.json", import.meta.url), "utf8")) as { version: string };
+  const range = (version: string) => `^${version.split(".").slice(0, 2).join(".")}.0`;
+  const older = (version: string) => {
+    const [major, minor] = version.split(".").map(Number);
+    return minor! > 0 ? `${major}.${minor! - 1}.4` : `${major! - 1}.9.0`;
+  };
+  const withRuntime = (files: Files, name: string, installed: string | null, declared: string) => ({
+    ...files,
+    "package.json": JSON.stringify({ ...JSON.parse(files["package.json"] as string), dependencies: { ...JSON.parse(files["package.json"] as string).dependencies, [name]: declared } }),
+    ...(installed ? { [`node_modules/${name}/package.json`]: JSON.stringify({ name, version: installed }) } : {}),
+  });
+
+  it.each<[string, Files, string, string]>([
+    ["Next", next(), "@scrollframe/react", REACT.version],
+    ["Vite React", viteReact(), "@scrollframe/react", REACT.version],
+    ["Vue", viteVue(), "@scrollframe/element", ELEMENT.version],
+  ])("%s with an older one installed: updated, and the plan says so", async (_name, files, name, current) => {
+    const old = older(current);
+    const { commands, stdout } = await run(project(withRuntime(files, name, old, `^${old}`)), [""]);
+    expect(commands).toEqual([`npm install ${name}@${range(current)}`]);
+    expect(stdout).toContain(`Update ${name} ${old} -> ${range(current)}`);
+  });
+
+  it("declared but not installed yet: the declared version decides", async () => {
+    const old = older(REACT.version);
+    const { commands } = await run(project(withRuntime(next(), "@scrollframe/react", null, `^${old}`)), [""]);
+    expect(commands).toEqual([`npm install @scrollframe/react@${range(REACT.version)}`]);
+  });
+
+  it("the current one installed: nothing to install", async () => {
+    const { commands } = await run(project(withRuntime(next(), "@scrollframe/react", REACT.version, `^${REACT.version}`)), [""]);
+    expect(commands).toEqual([]);
+  });
+
+  it("--no-install still installs nothing, and says what to update", async () => {
+    const old = older(REACT.version);
+    const { commands, stdout } = await run(project(withRuntime(next(), "@scrollframe/react", old, `^${old}`)), [""], ["--no-install"]);
+    expect(commands).toEqual([]);
+    expect(stdout).toContain(`@scrollframe/react ${old} is older than these frames need: update it to ${range(REACT.version)}.`);
+  });
+});
+
+describe("the printed retry repeats what was given", () => {
+  /** The argv of the printed command. */
+  function retryOf(stdout: string): string[] {
+    const line = stdout.split("\n").find((text) => text.startsWith("  npx @scrollframe/cli "))!;
+    return line.slice("  npx @scrollframe/cli ".length).split(" ");
+  }
+  it.each([
+    [["-q", "80"], ["--quality", "80"], ["--frames", "--widths"]],
+    [["-f", "120"], ["--frames", "120"], ["--quality", "--widths"]],
+    [["-w", "720,1280,1920"], ["--widths", "720,1280,1920"], ["--frames", "--quality"]],
+    [["-w", "720,1280,1920", "-q", "80"], ["--widths"], ["--quality"]],
+    [[], [], ["--frames", "--quality", "--widths"]],
+  ])("%j", async (given, present, absent) => {
+    const argv = retryOf((await run(project(next()), ["n"], given)).stdout);
+    for (const word of present) expect(argv).toContain(word);
+    for (const word of absent) expect(argv).not.toContain(word);
+  });
+});

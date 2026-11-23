@@ -342,3 +342,75 @@ describe("<scroll-sequence> poster state", () => {
     expect(el.querySelectorAll("img")).toHaveLength(1);
   });
 });
+
+describe("<scroll-sequence> size", () => {
+  it("is full width unless full-width is false", () => {
+    for (const [attrs, expected] of [[{}, true], [{ "full-width": "false" }, false]] as const) {
+      engines.length = 0;
+      const el = create(attrs);
+      el.manifest = manifest;
+      document.body.append(el);
+      expect(engines[0]!.options.fullWidth).toBe(expected);
+    }
+  });
+
+  it("takes the scroll length of the sequence unless the attribute is set", () => {
+    for (const [attrs, expected] of [[{}, "630vh"], [{ "scroll-length": "200vh" }, "200vh"]] as const) {
+      const el = create(attrs);
+      el.manifest = { ...manifest, scrollLength: "630vh" };
+      document.body.append(el);
+      expect(el.style.getPropertyValue("--sf-scroll-length")).toBe(expected);
+    }
+  });
+});
+
+describe("<scroll-sequence> scroll length from the page", () => {
+  it("keeps the length written in the page while the manifest loads, then takes the manifest's", async () => {
+    let answer: (response: Response) => void = () => {};
+    vi.stubGlobal("fetch", (() => new Promise<Response>((resolve) => (answer = resolve))) as unknown as Fetch);
+    const el = create({ src: "/sequence/manifest.json" });
+    el.style.setProperty("--sf-scroll-length", "630vh");
+    document.body.append(el);
+    expect(el.style.getPropertyValue("--sf-scroll-length")).toBe("630vh");
+    answer(jsonResponse({ ...manifest, scrollLength: "900vh" }));
+    await vi.waitFor(() => expect(el.style.getPropertyValue("--sf-scroll-length")).toBe("900vh"));
+  });
+
+  it("goes back to the default for a manifest without a length", async () => {
+    vi.stubGlobal("fetch", (async () => jsonResponse(manifest)) as unknown as Fetch);
+    const el = create({ src: "/sequence/manifest.json" });
+    el.style.setProperty("--sf-scroll-length", "630vh");
+    document.body.append(el);
+    await vi.waitFor(() => expect(engines).toHaveLength(1));
+    expect(el.style.getPropertyValue("--sf-scroll-length")).toBe("");
+  });
+});
+
+describe("<scroll-sequence> without its manifest", () => {
+  it("still spans the page exactly, so 100vw leaves no sideways scroll", async () => {
+    Object.defineProperty(document.documentElement, "clientWidth", { configurable: true, value: 1265 });
+    vi.stubGlobal("fetch", (async () => jsonResponse({}, 404)) as unknown as Fetch);
+    const failed = vi.fn();
+    const el = create({ src: "/missing/manifest.json" });
+    el.addEventListener("sf-error", failed);
+    document.body.append(el);
+    await vi.waitFor(() => expect(failed).toHaveBeenCalled());
+    expect(engines).toHaveLength(0);
+    expect(el.style.width).toBe("1265px");
+    el.remove();
+    expect(el.style.width).toBe("");
+    delete (document.documentElement as { clientWidth?: number }).clientWidth;
+  });
+
+  it("leaves the width alone when full-width is false", async () => {
+    Object.defineProperty(document.documentElement, "clientWidth", { configurable: true, value: 1265 });
+    vi.stubGlobal("fetch", (async () => jsonResponse({}, 404)) as unknown as Fetch);
+    const failed = vi.fn();
+    const el = create({ src: "/missing/manifest.json", "full-width": "false" });
+    el.addEventListener("sf-error", failed);
+    document.body.append(el);
+    await vi.waitFor(() => expect(failed).toHaveBeenCalled());
+    expect(el.style.width).toBe("");
+    delete (document.documentElement as { clientWidth?: number }).clientWidth;
+  });
+});
